@@ -198,7 +198,7 @@ impl RimeBackend for ImmRimeAdapter {
 
                 if let Some(comp_data) = comp_str {
                     context.composition = Some(crate::proto::rime_service_v2::CompositionProto {
-                        length: comp_data.text.chars().count() as i32,
+                        length: comp_data.text.len() as i32,
                         cursor_pos: comp_data.cursor_pos,
                         sel_start: comp_data.sel_start,
                         sel_end: comp_data.sel_end,

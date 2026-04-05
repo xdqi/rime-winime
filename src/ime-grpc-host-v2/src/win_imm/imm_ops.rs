@@ -1,6 +1,6 @@
 use windows::Win32::Foundation::{BOOL, HMODULE};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-use windows::Win32::UI::Input::Ime::{HIMC, ImmGetCompositionStringW, ImmGetCandidateListW, GCS_COMPSTR, GCS_RESULTSTR, GCS_CURSORPOS, CANDIDATELIST};
+use windows::Win32::UI::Input::Ime::{HIMC, ImmGetCompositionStringW, ImmGetCandidateListW, GCS_COMPSTR, GCS_COMPATTR, GCS_RESULTSTR, GCS_CURSORPOS, CANDIDATELIST};
 use windows::core::{s, PCWSTR};
 
 pub type PImeInquire = unsafe extern "system" fn(lp_imeinfo: *mut windows::Win32::UI::Input::Ime::IMEINFO, lpsz_wnd_class: *mut u16, dw_system_info_flags: u32) -> BOOL;
@@ -57,19 +57,55 @@ pub fn get_composition_string(himc: HIMC) -> Option<CompositionData> {
         let bytes_copied = ImmGetCompositionStringW(himc, GCS_COMPSTR, Some(buffer.as_mut_ptr() as *mut _), size as u32);
         
         if bytes_copied > 0 {
-            let text = String::from_utf16_lossy(&buffer);
+            let u16_len = (bytes_copied / 2) as usize;
+            let actual_buffer = &buffer[0..u16_len];
+            let text = String::from_utf16_lossy(actual_buffer);
             
+            let utf16_to_utf8_offset = |u16_idx: usize| -> i32 {
+                let limited = &actual_buffer[0..usize::min(u16_idx, actual_buffer.len())];
+                String::from_utf16_lossy(limited).len() as i32
+            };
+
             // Get cursor pos, which IMM returns in characters natively!
             let mut cursor_pos = ImmGetCompositionStringW(himc, GCS_CURSORPOS, None, 0);
             if cursor_pos < 0 {
-                cursor_pos = text.chars().count() as i32; // fallback to the end
+                cursor_pos = actual_buffer.len() as i32; // fallback to the end
             }
+            let u8_cursor_pos = utf16_to_utf8_offset(cursor_pos as usize);
+
+            // GCS_COMPATTR
+            let attr_size = ImmGetCompositionStringW(himc, GCS_COMPATTR, None, 0);
+            let mut u16_sel_start = 0;
+            let mut u16_sel_end = actual_buffer.len() as i32;
+
+            if attr_size > 0 {
+                let mut attr_buffer: Vec<u8> = vec![0; attr_size as usize];
+                if ImmGetCompositionStringW(himc, GCS_COMPATTR, Some(attr_buffer.as_mut_ptr() as *mut _), attr_size as u32) > 0 {
+                    let mut start = -1;
+                    let mut end = -1;
+                    for (i, &attr) in attr_buffer.iter().enumerate() {
+                        if attr == 1 || attr == 3 { // ATTR_TARGET_CONVERTED or ATTR_TARGET_NOTCONVERTED
+                            if start == -1 {
+                                start = i as i32;
+                            }
+                            end = (i + 1) as i32;
+                        }
+                    }
+                    if start != -1 {
+                        u16_sel_start = start;
+                        u16_sel_end = end;
+                    }
+                }
+            }
+
+            let u8_sel_start = utf16_to_utf8_offset(u16_sel_start as usize);
+            let u8_sel_end = utf16_to_utf8_offset(u16_sel_end as usize);
 
             Some(CompositionData {
                 text,
-                cursor_pos,
-                sel_start: cursor_pos, // Map them to cursor_pos for now
-                sel_end: cursor_pos,
+                cursor_pos: u8_cursor_pos,
+                sel_start: u8_sel_start,
+                sel_end: u8_sel_end,
             })
         } else {
             None
