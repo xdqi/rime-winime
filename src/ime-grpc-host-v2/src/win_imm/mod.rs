@@ -127,7 +127,8 @@ impl RimeBackend for ImmRimeAdapter {
                     let vk = crate::win_imm::vk_map::rime_to_vk(key.keycode);
                     let modifiers = key.modifier;
 
-                    let is_keyup = (modifiers & (1 << 14)) != 0;
+                    // Rime's kReleaseMask is 1 << 30
+                    let is_keyup = (modifiers & (1 << 30)) != 0;
 
                     // Rough mapping (will improve later with constants)
                     if (modifiers & 1) != 0 { key_state[0x10] = 0x80; } // VK_SHIFT
