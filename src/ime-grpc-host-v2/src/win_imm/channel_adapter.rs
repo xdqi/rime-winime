@@ -41,28 +41,29 @@ impl ChannelRimeBackend {
         
         let _ = thread::spawn(move || {
             let mut runtime_backend = inner.take().unwrap_or_else(|| Box::new(crate::win_imm::ImmRimeAdapter::default()));
+            let rt = tokio::runtime::Runtime::new().unwrap();
             
             for cmd in rx {
                 match cmd {
                     BackendCommand::OpenSession { reply } => {
                         // Ignoring if the receiver dropped
-                        let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.open_session()));
+                        let _ = reply.send(rt.block_on(runtime_backend.open_session()));
                     }
                     BackendCommand::DestroySession { session_id } => {
-                        tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.destroy_session(session_id));
+                        rt.block_on(runtime_backend.destroy_session(session_id));
                     }
                     BackendCommand::ProcessKey { session_id, key, reply } => {
-                        let ans = tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.process_key(session_id, &key));
+                        let ans = rt.block_on(runtime_backend.process_key(session_id, &key));
                         let _ = reply.send(ans);
                     }
                     BackendCommand::GetContext { session_id, reply } => {
-                        let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.get_context(session_id)));
+                        let _ = reply.send(rt.block_on(runtime_backend.get_context(session_id)));
                     }
                     BackendCommand::GetCommit { session_id, reply } => {
-                        let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.get_commit(session_id)));
+                        let _ = reply.send(rt.block_on(runtime_backend.get_commit(session_id)));
                     }
                     BackendCommand::SelectCandidate { session_id, index, reply } => {
-                        let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.select_candidate(session_id, index)));
+                        let _ = reply.send(rt.block_on(runtime_backend.select_candidate(session_id, index)));
                     }
                 }
             }
