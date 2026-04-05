@@ -155,4 +155,33 @@ bool GrpcImeClientV2::GetCommit(uintptr_t session_id, std::string* out_commit) {
   return false;
 }
 
+bool GrpcImeClientV2::SelectCandidateOnCurrentPage(uintptr_t session_id, int index) {
+  std::string my_session;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = sessions_.find(session_id);
+    if (it != sessions_.end()) {
+      my_session = it->second;
+    }
+  }
+  if (my_session.empty()) return false;
+
+  grpc::ClientContext context;
+  service::v2::SelectCandidateRequest req;
+  req.set_session_id(my_session);
+  req.set_index(index);
+
+  service::v2::SelectCandidateResponse resp;
+  grpc::Status status = stub_->SelectCandidateOnCurrentPage(&context, req, &resp);
+  
+  if (status.ok()) {
+    return resp.success();
+  }
+  return false;
+}
+
+bool GrpcImeClientV2::SelectCandidate(uintptr_t session_id, int index) {
+  return SelectCandidateOnCurrentPage(session_id, index);
+}
+
 } // namespace rime

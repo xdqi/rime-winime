@@ -24,11 +24,11 @@ for f in "${ARIFY_BIN}" "${LIBARIFY_SO}" "${LIBARIF_RIME_SO}" "${PROXY_SO}"; do
   fi
 done
 
+# Start Host
 echo "[grpc-v2-interactive] Starting Host in background via Wine..."
 cd "${HOST_DIR}"
-env RUST_LOG=info GLOG_log_dir="${CACHE_DIR}" WINEPREFIX=/opt/sogou/.wine32 wine "${HOST_DIR}/target/i686-pc-windows-gnu/debug/ime-grpc-host-v2.exe" > "${CACHE_DIR}/interactive_host.log" 2>&1 &
+env RUST_LOG=trace GLOG_log_dir="${CACHE_DIR}" WINEPREFIX=/opt/sogou/.wine32 wine "${HOST_DIR}/target/i686-pc-windows-gnu/debug/ime-grpc-host-v2.exe" > "${CACHE_DIR}/interactive_host.log" 2>&1 &
 HOST_PID=$!
-
 cleanup() {
   echo "[grpc-v2-interactive] Cleaning up host (${HOST_PID})..."
   if kill -0 "${HOST_PID}" 2>/dev/null; then

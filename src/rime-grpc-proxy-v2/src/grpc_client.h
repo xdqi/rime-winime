@@ -25,6 +25,8 @@ public:
   bool ProcessKey(uintptr_t session_id, int keycode, int mask);
   bool GetContext(uintptr_t session_id, service::v2::RimeContextProto* out_context);
   bool GetCommit(uintptr_t session_id, std::string* out_commit);
+  bool SelectCandidateOnCurrentPage(uintptr_t session_id, int index);
+  bool SelectCandidate(uintptr_t session_id, int index);
 
 private:
   std::unique_ptr<service::v2::RimeService::Stub> stub_;

@@ -63,14 +63,13 @@ echo "[grpc-v2-smoke] starting host via Wine"
 cd "${HOST_DIR}"
 env RUST_LOG=info WINEPREFIX=/opt/sogou/.wine32 wine "${HOST_DIR}/target/i686-pc-windows-gnu/debug/ime-grpc-host-v2.exe" > "${HOST_LOG}" 2>&1 &
 HOST_PID=$!
-
 echo "[grpc-v2-smoke] Waiting for host to bind port 50051..."
 for i in {1..30}; do
   if ss -tln | grep -q ':50051 '; then
     echo "Host is ready!"
     break
   fi
-  sleep 0.5
+  sleep 1
 done
 
 echo "[grpc-v2-smoke] running expect tab smoke"
