@@ -1,0 +1,10 @@
+# schema: grpc_proxy.schema.yaml
+schema:
+  schema_id: grpc_proxy
+  name: RPC Proxy (V2 Clean)
+  version: "0.2"
+
+engine:
+  processors:
+    - grpc_key_event_processor # This is the ONLY processor now!
+    # No segementors, no translators! The host does it all.

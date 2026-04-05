@@ -1,0 +1,104 @@
+syntax = "proto3";
+
+package rime.service.v2;
+
+option cc_enable_arenas = true;
+
+service RimeService {
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  rpc ProcessKey(ProcessKeyRequest) returns (ProcessKeyResponse);
+  rpc GetContext(GetContextRequest) returns (GetContextResponse);
+  rpc GetCommit(GetCommitRequest) returns (GetCommitResponse);
+  rpc DestroySession(DestroySessionRequest) returns (DestroySessionResponse);
+}
+
+// ----------------------------------------------------------------------------
+// Models
+// ----------------------------------------------------------------------------
+
+message KeyEvent {
+  uint32 keycode = 1;
+  uint32 modifier = 2; // modifiers mask (Shift, Ctrl, Alt, etc.)
+  // We can include other fields if needed, but librime mostly just needs keycode + modifiers
+}
+
+message CandidateProto {
+  string text = 1;
+  string comment = 2;
+  double quality = 3;
+}
+
+message MenuProto {
+  repeated CandidateProto candidates = 1;
+  int32 page_size = 2;
+  int32 page_no = 3;
+  bool is_last_page = 4;
+  int32 highlighted_candidate_index = 5;
+  int32 num_candidates = 6;
+  string select_keys = 7;
+}
+
+message CompositionProto {
+  int32 length = 1;
+  int32 cursor_pos = 2;
+  int32 sel_start = 3;
+  int32 sel_end = 4;
+  string preedit = 5;
+}
+
+message RimeContextProto {
+  CompositionProto composition = 1;
+  MenuProto menu = 2;
+  string commit_text_preview = 3;
+  // If there's pending text we can signal it in the context response
+}
+
+// ----------------------------------------------------------------------------
+// RPC Requests and Responses
+// ----------------------------------------------------------------------------
+
+message OpenSessionRequest {
+  string schema_id = 1;
+  // Include frontend/worker details here later if needed
+}
+
+message OpenSessionResponse {
+  string session_id = 1;
+}
+
+message ProcessKeyRequest {
+  string session_id = 1;
+  KeyEvent key_event = 2;
+}
+
+message ProcessKeyResponse {
+  string session_id = 1;
+  bool accepted = 2; // Returns true if librime consumed the key, false otherwise
+}
+
+message GetContextRequest {
+  string session_id = 1;
+}
+
+message GetContextResponse {
+  string session_id = 1;
+  RimeContextProto context = 2;
+}
+
+message GetCommitRequest {
+  string session_id = 1;
+}
+
+message GetCommitResponse {
+  string session_id = 1;
+  string commit_text = 2; // The committed string
+  bool has_commit = 3; // True if there was a commit
+}
+
+message DestroySessionRequest {
+  string session_id = 1;
+}
+
+message DestroySessionResponse {
+  bool success = 1;
+}

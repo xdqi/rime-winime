@@ -1,0 +1,43 @@
+[package]
+name = "ime-grpc-host-v2"
+version = "0.1.0"
+edition = "2021"
+default-run = "ime-grpc-host-v2"
+
+[[bin]]
+name = "ime-grpc-host-v2"
+path = "src/main.rs"
+
+[[bin]]
+name = "test-client"
+path = "src/client.rs"
+
+[[bin]]
+name = "test-imm"
+path = "src/test_imm.rs"
+
+[dependencies]
+prost = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
+tonic = { version = "0.12", features = ["transport"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1", features = ["v4"] }
+[target.'cfg(not(windows))'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_System_LibraryLoader",
+  "Win32_UI_Input_Ime",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_System_Threading",
+  "Win32_System_SystemServices",
+] }
+
+[build-dependencies]
+tonic-build = "0.12"
