@@ -49,7 +49,7 @@ impl ChannelRimeBackend {
                         let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.open_session()));
                     }
                     BackendCommand::DestroySession { session_id } => {
-                        let _ = tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.destroy_session(session_id));
+                        tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.destroy_session(session_id));
                     }
                     BackendCommand::ProcessKey { session_id, key, reply } => {
                         let ans = tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.process_key(session_id, &key));
@@ -88,7 +88,7 @@ impl RimeBackend for ChannelRimeBackend {
 
     async fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
         let (tx, rx) = oneshot::channel();
-        self.tx.send(BackendCommand::ProcessKey { session_id, key: key.clone(), reply: tx }).unwrap();
+        self.tx.send(BackendCommand::ProcessKey { session_id, key: *key, reply: tx }).unwrap();
         rx.await.unwrap_or(false)
     }
 

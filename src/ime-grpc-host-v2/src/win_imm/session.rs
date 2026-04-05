@@ -1,4 +1,3 @@
-use std::ffi::c_void;
 
 #[cfg(windows)]
 use windows::Win32::Foundation::{HMODULE, HWND};
@@ -41,7 +40,7 @@ impl WinImmSession {
             let himc = ImmCreateContext();
             
             // Bind context to window
-            ImmAssociateContextEx(hwnd, himc, IACE_CHILDREN);
+            let _ = ImmAssociateContextEx(hwnd, himc, IACE_CHILDREN);
 
             Ok(Self {
                 session_id,
@@ -57,7 +56,7 @@ impl WinImmSession {
     pub fn destroy(&self) {
         unsafe {
             // Note: Caller is responsible for calling ImeSelect(himc, FALSE) before this
-            ImmDestroyContext(self.himc);
+            let _ = ImmDestroyContext(self.himc);
             let _ = DestroyWindow(self.hwnd);
         }
     }

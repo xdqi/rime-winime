@@ -1,6 +1,5 @@
 // Modules are provided by the library crate
 use ime_grpc_host_v2::proto;
-use ime_grpc_host_v2::backend;
 use ime_grpc_host_v2::server;
 
 // Uncomment when developing win_imm

@@ -30,10 +30,16 @@ pub struct ImmRimeAdapter {
 #[cfg(windows)]
 static IME_FUNCS: OnceLock<Option<ImeFunctions>> = OnceLock::new();
 
+impl Default for ImmRimeAdapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ImmRimeAdapter {
     pub fn new() -> Self {
         #[cfg(windows)]
-        let ime_functions = IME_FUNCS.get_or_init(|| {
+        let ime_functions = *IME_FUNCS.get_or_init(|| {
             // Hardcoded to QQPinyin for now, as requested.
             use windows::core::w;
             match crate::win_imm::imm_ops::load_ime_dll(w!("C:\\windows\\system32\\QQPinyin.ime")) {
@@ -51,7 +57,7 @@ impl ImmRimeAdapter {
                     None
                 }
             }
-        }).clone();
+        });
 
         Self {
             #[cfg(windows)]
@@ -88,7 +94,7 @@ impl RimeBackend for ImmRimeAdapter {
             let id = self.sessions.len() + 1; // Basic sequential ID
             if let Some(ime) = &self.ime_functions {
                 match session::WinImmSession::create(id, ime.h_module) {
-                    Ok(mut session) => {
+                    Ok(session) => {
                         // Activate it for the Input Context
                         let result = unsafe { (ime.select)(session.himc, windows::Win32::Foundation::BOOL(1)) };
                         if result.as_bool() {
@@ -108,9 +114,9 @@ impl RimeBackend for ImmRimeAdapter {
     async fn destroy_session(&mut self, session_id: usize) {
         #[cfg(windows)]
         {
-            if let Some(mut session) = self.sessions.remove(&session_id) {
+            if let Some(session) = self.sessions.remove(&session_id) {
                 if let Some(ime) = &self.ime_functions {
-                    unsafe { (ime.select)(session.himc, windows::Win32::Foundation::BOOL(0)) }; // FALSE
+                    unsafe { let _ = (ime.select)(session.himc, windows::Win32::Foundation::BOOL(0)); }; // FALSE
                 }
                 session.destroy();
             }
@@ -141,7 +147,7 @@ impl RimeBackend for ImmRimeAdapter {
                         (ime.process_key)(
                             session.himc,
                             vk,
-                            l_key_data as u32,
+                            l_key_data,
                             key_state.as_ptr(),
                         )
                     };
@@ -171,11 +177,10 @@ impl RimeBackend for ImmRimeAdapter {
                                 let message = trans_msgs[msg_base];
                                 let _wparam = trans_msgs[msg_base + 1];
                                 let lparam = trans_msgs[msg_base + 2];
-                                if message == 0x010F /* WM_IME_COMPOSITION */ {
-                                    if (lparam & 0x0800 /* GCS_RESULTSTR */) != 0 {
+                                if message == 0x010F /* WM_IME_COMPOSITION */
+                                    && (lparam & 0x0800 /* GCS_RESULTSTR */) != 0 {
                                         has_commit_msg = true;
                                     }
-                                }
                             }
                         }
                         
@@ -242,7 +247,7 @@ impl RimeBackend for ImmRimeAdapter {
         {
             if let Some(session) = self.sessions.get_mut(&session_id) {
                 unsafe {
-                    windows::Win32::UI::Input::Ime::ImmNotifyIME(
+                    let _ = windows::Win32::UI::Input::Ime::ImmNotifyIME(
                         session.himc, 
                         windows::Win32::UI::Input::Ime::NI_SELECTCANDIDATESTR, 
                         windows::Win32::UI::Input::Ime::NOTIFY_IME_INDEX(0), 
