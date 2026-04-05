@@ -15,10 +15,13 @@ namespace rime {
 class GrpcImeClientV2 {
 public:
   static std::shared_ptr<GrpcImeClientV2> Instance();
-  static std::shared_ptr<GrpcImeClientV2> GetOrCreate(Engine* engine, const std::string& target_address);
+  static std::shared_ptr<GrpcImeClientV2> GetOrCreate(const std::string& target_address, int timeout_ms, bool fallback_on_error);
   
-  GrpcImeClientV2(const std::string& target_address);
+  GrpcImeClientV2(const std::string& target_address, int timeout_ms, bool fallback_on_error);
   ~GrpcImeClientV2();
+
+  bool FallbackOnError() const { return fallback_on_error_; }
+  void SetupClientContext(grpc::ClientContext* context);
 
   uintptr_t OpenSession();
   void DestroySession(uintptr_t session_id);
@@ -34,6 +37,9 @@ private:
   std::mutex mutex_;
   std::unordered_map<uintptr_t, std::string> sessions_;
   uintptr_t next_id_ = 1;
+
+  int timeout_ms_ = 100;
+  bool fallback_on_error_ = true;
 };
 
 } // namespace rime

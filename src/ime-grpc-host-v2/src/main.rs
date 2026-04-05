@@ -1,16 +1,38 @@
 // Modules are provided by the library crate
 use ime_grpc_host_v2::proto;
 use ime_grpc_host_v2::server;
+use clap::Parser;
 
 // Uncomment when developing win_imm
 #[cfg(windows)]
 use ime_grpc_host_v2::win_imm;
 
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// The IP and port to listen on for gRPC connections
+    #[arg(long, env = "GRPC_BIND_ADDR", default_value = "127.0.0.1:50051")]
+    bind: String,
+
+    /// Path to the IME DLL (e.g. C:\windows\system32\QQPinyin.ime or sys/SogouPY.ime)
+    #[arg(long, env = "GRPC_IME_PATH", default_value = "C:\\windows\\system32\\QQPinyin.ime")]
+    ime_path: String,
+
+    /// Whether to show the hidden message window for debugging
+    #[arg(long, env = "GRPC_SHOW_WINDOW", default_value_t = false)]
+    show_window: bool,
+
+    /// Auto-destroy idle sessions after this many seconds
+    #[arg(long, env = "GRPC_SESSION_TIMEOUT_SEC", default_value_t = 600)]
+    session_timeout_sec: u64,
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let addr = "127.0.0.1:50051".parse()?;
+    let args = Args::parse();
+    let addr = args.bind.parse()?;
 
     use proto::rime_service_v2::rime_service_server::RimeServiceServer;
     use server::RimeServerImpl;
@@ -18,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = Box::new(backend::native::NativeRimeBackend::new());
 
     #[cfg(windows)]
-    let backend = Box::new(win_imm::ImmRimeAdapter::new());
+    let backend = Box::new(win_imm::ImmRimeAdapter::new(&args.ime_path, args.show_window));
 
     let server = RimeServerImpl::new(backend);
 

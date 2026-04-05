@@ -20,22 +20,24 @@ extern "system" {
 pub struct ImmRimeAdapter {
     ime_functions: Option<ImeFunctions>,
     sessions: HashMap<usize, session::WinImmSession>,
+    show_window: bool,
 }
 
 static IME_FUNCS: OnceLock<Option<ImeFunctions>> = OnceLock::new();
 
 impl Default for ImmRimeAdapter {
     fn default() -> Self {
-        Self::new()
+        Self::new("C:\\windows\\system32\\QQPinyin.ime", false)
     }
 }
 
 impl ImmRimeAdapter {
-    pub fn new() -> Self {
-        let ime_functions = *IME_FUNCS.get_or_init(|| {
-            // Hardcoded to QQPinyin for now, as requested.
-            use windows::core::w;
-            match crate::win_imm::imm_ops::load_ime_dll(w!("C:\\windows\\system32\\QQPinyin.ime")) {
+    pub fn new(ime_path: &str, show_window: bool) -> Self {
+        let ime_path_owned = ime_path.to_string();
+        let ime_functions = *IME_FUNCS.get_or_init(move || {
+            use windows::core::{HSTRING, PCWSTR};
+            let hstring_path = HSTRING::from(ime_path_owned.as_str());
+            match crate::win_imm::imm_ops::load_ime_dll(PCWSTR::from_raw(hstring_path.as_ptr())) {
                 Ok(funcs) => {
                     // Global initialize
                     unsafe {
@@ -46,16 +48,20 @@ impl ImmRimeAdapter {
                     Some(funcs)
                 },
                 Err(e) => {
-                    println!("Failed to load QQPinyin.ime: {:?}", e);
+                    println!("Failed to load IME from {}: {:?}", ime_path_owned, e);
                     None
                 }
             }
         });
 
+        if show_window {
+            tracing::info!("show_window flag is enabled for IME sessions");
+        }
+
         Self {
             ime_functions,
             sessions: HashMap::new(),
-            // Other initialization goes here
+            show_window,
         }
     }
 }
@@ -82,7 +88,7 @@ impl RimeBackend for ImmRimeAdapter {
         {
             let id = self.sessions.len() + 1; // Basic sequential ID
             if let Some(ime) = &self.ime_functions {
-                match session::WinImmSession::create(id, ime.h_module) {
+                match session::WinImmSession::create(id, ime.h_module, self.show_window) {
                     Ok(session) => {
                         // Activate it for the Input Context
                         let result = unsafe { (ime.select)(session.himc, windows::Win32::Foundation::BOOL(1)) };

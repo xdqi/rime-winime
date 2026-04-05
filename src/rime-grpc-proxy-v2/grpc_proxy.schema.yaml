@@ -4,6 +4,11 @@ schema:
   name: RPC Proxy (V2 Clean)
   version: "0.2"
 
+grpc_proxy:
+  backend_address: "127.0.0.1:50051"
+  rpc_timeout_ms: 100
+  fallback_on_error: true
+
 engine:
   processors:
     - grpc_key_event_processor # This is the ONLY processor now!

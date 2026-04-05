@@ -15,24 +15,35 @@ static std::shared_ptr<GrpcImeClientV2> g_client;
 
 std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::Instance() {
     if (!g_client) {
-        g_client = std::make_shared<GrpcImeClientV2>("localhost:50051");
+        g_client = std::make_shared<GrpcImeClientV2>("127.0.0.1:50051", 100, true);
     }
     return g_client;
 }
 
-std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::GetOrCreate(Engine* engine, const std::string& target_address) {
-  return Instance();
+std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::GetOrCreate(const std::string& target_address, int timeout_ms, bool fallback_on_error) {
+    if (!g_client) {
+        g_client = std::make_shared<GrpcImeClientV2>(target_address, timeout_ms, fallback_on_error);
+    }
+    return g_client;
 }
 
-GrpcImeClientV2::GrpcImeClientV2(const std::string& target_address) {
+GrpcImeClientV2::GrpcImeClientV2(const std::string& target_address, int timeout_ms, bool fallback_on_error)
+    : timeout_ms_(timeout_ms), fallback_on_error_(fallback_on_error) {
   auto channel = grpc::CreateChannel(target_address, grpc::InsecureChannelCredentials());
   stub_ = RimeService::NewStub(channel);
+}
+
+void GrpcImeClientV2::SetupClientContext(grpc::ClientContext* context) {
+    if (timeout_ms_ > 0) {
+        context->set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds(timeout_ms_));
+    }
 }
 
 GrpcImeClientV2::~GrpcImeClientV2() {
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto& pair : sessions_) {
     ClientContext context;
+    SetupClientContext(&context);
     DestroySessionRequest req;
     req.set_session_id(pair.second);
     DestroySessionResponse resp;
@@ -43,6 +54,7 @@ GrpcImeClientV2::~GrpcImeClientV2() {
 
 uintptr_t GrpcImeClientV2::OpenSession() {
   ClientContext context;
+  SetupClientContext(&context);
   OpenSessionRequest req;
   req.set_schema_id("luna_pinyin");
   OpenSessionResponse resp;
@@ -70,6 +82,7 @@ void GrpcImeClientV2::DestroySession(uintptr_t session_id) {
 
   if (!my_session.empty()) {
     ClientContext context;
+    SetupClientContext(&context);
     DestroySessionRequest req;
     req.set_session_id(my_session);
     DestroySessionResponse resp;
@@ -89,6 +102,7 @@ bool GrpcImeClientV2::ProcessKey(uintptr_t session_id, int keycode, int mask) {
   if (my_session.empty()) return false;
 
   ClientContext context;
+  SetupClientContext(&context);
   ProcessKeyRequest req;
   req.set_session_id(my_session);
   
@@ -117,6 +131,7 @@ bool GrpcImeClientV2::GetContext(uintptr_t session_id, RimeContextProto* out_con
   if (my_session.empty() || !out_context) return false;
 
   ClientContext context;
+  SetupClientContext(&context);
   GetContextRequest req;
   req.set_session_id(my_session);
 
@@ -142,6 +157,7 @@ bool GrpcImeClientV2::GetCommit(uintptr_t session_id, std::string* out_commit) {
   if (my_session.empty() || !out_commit) return false;
 
   ClientContext context;
+  SetupClientContext(&context);
   GetCommitRequest req;
   req.set_session_id(my_session);
 
@@ -167,6 +183,7 @@ bool GrpcImeClientV2::SelectCandidateOnCurrentPage(uintptr_t session_id, int ind
   if (my_session.empty()) return false;
 
   grpc::ClientContext context;
+  SetupClientContext(&context);
   service::v2::SelectCandidateRequest req;
   req.set_session_id(my_session);
   req.set_index(index);

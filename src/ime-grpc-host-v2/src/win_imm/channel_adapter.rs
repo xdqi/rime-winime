@@ -40,7 +40,7 @@ impl ChannelRimeBackend {
         let (tx, rx) = std_mpsc::channel();
         
         let _ = thread::spawn(move || {
-            let mut runtime_backend = inner.take().unwrap_or_else(|| Box::new(crate::win_imm::ImmRimeAdapter::new()));
+            let mut runtime_backend = inner.take().unwrap_or_else(|| Box::new(crate::win_imm::ImmRimeAdapter::default()));
             
             for cmd in rx {
                 match cmd {

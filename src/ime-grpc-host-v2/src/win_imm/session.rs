@@ -1,7 +1,7 @@
 
 use windows::Win32::Foundation::{HMODULE, HWND};
 use windows::Win32::UI::Input::Ime::{HIMC, ImmCreateContext, ImmAssociateContextEx, ImmDestroyContext, IACE_CHILDREN};
-use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, HWND_MESSAGE, WINDOW_EX_STYLE, WINDOW_STYLE};
+use windows::Win32::UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, HWND_MESSAGE, WINDOW_EX_STYLE, WINDOW_STYLE, WS_VISIBLE};
 use windows::core::w;
 
 pub struct WinImmSession {
@@ -13,16 +13,19 @@ pub struct WinImmSession {
 }
 
 impl WinImmSession {
-    pub fn create(session_id: usize, h_ime_module: HMODULE) -> Result<Self, windows::core::Error> {
+    pub fn create(session_id: usize, h_ime_module: HMODULE, show_window: bool) -> Result<Self, windows::core::Error> {
         unsafe {
-            // Create a message-only window
+            // Create a window
+            let style = if show_window { WS_VISIBLE } else { WINDOW_STYLE(0) };
+            let parent = if show_window { HWND(0 as _) } else { HWND_MESSAGE };
+            
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
-                w!("STATIC"), // Use a simple built-in class for msg-only window
+                w!("STATIC"), // Use a simple built-in class
                 w!("HiddenImeWindow"),
-                WINDOW_STYLE(0),
-                0, 0, 0, 0,
-                HWND_MESSAGE,
+                style,
+                0, 0, 800, 600,
+                parent,
                 None,
                 None,
                 None,
