@@ -3,6 +3,7 @@ name = "ime-grpc-host-v2"
 version = "0.1.0"
 edition = "2021"
 default-run = "ime-grpc-host-v2"
+autobins = false
 
 [[bin]]
 name = "ime-grpc-host-v2"
@@ -11,10 +12,6 @@ path = "src/main.rs"
 [[bin]]
 name = "test-client"
 path = "src/client.rs"
-
-[[bin]]
-name = "test-imm"
-path = "src/test_imm.rs"
 
 [dependencies]
 prost = "0.13"

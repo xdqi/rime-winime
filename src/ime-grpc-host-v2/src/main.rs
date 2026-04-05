@@ -1,17 +1,13 @@
-pub mod proto {
-    pub mod rime_service_v2 {
-        tonic::include_proto!("rime.service.v2");
-    }
-}
-
-pub mod backend;
-pub mod server;
+// Modules are provided by the library crate
+use ime_grpc_host_v2::proto;
+use ime_grpc_host_v2::backend;
+use ime_grpc_host_v2::server;
 
 // Uncomment when developing win_imm
 #[cfg(windows)]
-pub mod win_imm;
+use ime_grpc_host_v2::win_imm;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
@@ -23,7 +19,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = Box::new(backend::native::NativeRimeBackend::new());
 
     #[cfg(windows)]
-    let backend = Box::new(win_imm::channel_adapter::ChannelRimeBackend::new(None));
+    let backend = Box::new(win_imm::ImmRimeAdapter::new());
 
     let server = RimeServerImpl::new(backend);
 
