@@ -237,7 +237,25 @@ impl RimeBackend for ImmRimeAdapter {
         None
     }
 
-    async fn select_candidate(&mut self, _session_id: usize, _index: usize) -> bool {
+    async fn select_candidate(&mut self, session_id: usize, index: usize) -> bool {
+        #[cfg(windows)]
+        {
+            if let Some(session) = self.sessions.get_mut(&session_id) {
+                unsafe {
+                    windows::Win32::UI::Input::Ime::ImmNotifyIME(
+                        session.himc, 
+                        windows::Win32::UI::Input::Ime::NI_SELECTCANDIDATESTR, 
+                        windows::Win32::UI::Input::Ime::NOTIFY_IME_INDEX(0), 
+                        index as u32
+                    );
+                    // Force checking if this produced a commit immediately
+                    if let Some(rstr) = crate::win_imm::imm_ops::get_result_string(session.himc) {
+                        session.pending_commit = Some(rstr);
+                    }
+                }
+                return true;
+            }
+        }
         false
     }
 }
