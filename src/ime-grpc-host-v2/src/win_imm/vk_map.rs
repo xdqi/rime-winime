@@ -1,7 +1,5 @@
-#[cfg(windows)]
 use windows::Win32::UI::Input::KeyboardAndMouse::{VkKeyScanW, MapVirtualKeyW, MAPVK_VK_TO_VSC};
 
-#[cfg(windows)]
 pub fn rime_to_vk(keycode: u32) -> u32 {
     match keycode {
         0xFF08 => 0x08, // VK_BACK
@@ -26,7 +24,6 @@ pub fn rime_to_vk(keycode: u32) -> u32 {
     }
 }
 
-#[cfg(windows)]
 pub fn make_l_key_data(vkey: u32, is_keyup: bool) -> u32 {
     let scan_code = unsafe { MapVirtualKeyW(vkey, MAPVK_VK_TO_VSC) };
     let repeat_count = 1u32;

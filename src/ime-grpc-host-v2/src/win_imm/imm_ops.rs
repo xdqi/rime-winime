@@ -1,22 +1,13 @@
-#[cfg(windows)]
 use windows::Win32::Foundation::{BOOL, HMODULE};
-#[cfg(windows)]
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-#[cfg(windows)]
 use windows::Win32::UI::Input::Ime::{HIMC, ImmGetCompositionStringW, ImmGetCandidateListW, GCS_COMPSTR, GCS_RESULTSTR, GCS_CURSORPOS, CANDIDATELIST};
-#[cfg(windows)]
 use windows::core::{s, PCWSTR};
 
-#[cfg(windows)]
 pub type PImeInquire = unsafe extern "system" fn(lp_imeinfo: *mut windows::Win32::UI::Input::Ime::IMEINFO, lpsz_wnd_class: *mut u16, dw_system_info_flags: u32) -> BOOL;
-#[cfg(windows)]
 pub type PImeSelect = unsafe extern "system" fn(h_imc: HIMC, f_select: BOOL) -> BOOL;
-#[cfg(windows)]
 pub type PImeProcessKey = unsafe extern "system" fn(h_imc: HIMC, v_key: u32, l_key_data: u32, lpb_key_state: *const u8) -> BOOL;
-#[cfg(windows)]
 pub type PImeToAsciiEx = unsafe extern "system" fn(u_vkey: u32, u_scan_code: u32, lpb_key_state: *const u8, lpdw_trans_key: *mut u32, fu_state: u32, h_imc: HIMC) -> u32;
 
-#[cfg(windows)]
 #[derive(Clone, Copy)]
 pub struct ImeFunctions {
     pub h_module: HMODULE,
@@ -26,12 +17,9 @@ pub struct ImeFunctions {
     pub to_ascii_ex: PImeToAsciiEx,
 }
 
-#[cfg(windows)]
 unsafe impl Send for ImeFunctions {}
-#[cfg(windows)]
 unsafe impl Sync for ImeFunctions {}
 
-#[cfg(windows)]
 pub fn load_ime_dll(path: PCWSTR) -> Result<ImeFunctions, windows::core::Error> {
     unsafe {
         let h_module = LoadLibraryW(path)?;
@@ -51,7 +39,6 @@ pub fn load_ime_dll(path: PCWSTR) -> Result<ImeFunctions, windows::core::Error> 
     }
 }
 
-#[cfg(windows)]
 pub struct CompositionData {
     pub text: String,
     pub cursor_pos: i32,
@@ -59,7 +46,6 @@ pub struct CompositionData {
     pub sel_end: i32,
 }
 
-#[cfg(windows)]
 pub fn get_composition_string(himc: HIMC) -> Option<CompositionData> {
     unsafe {
         let size = ImmGetCompositionStringW(himc, GCS_COMPSTR, None, 0);
@@ -91,7 +77,6 @@ pub fn get_composition_string(himc: HIMC) -> Option<CompositionData> {
     }
 }
 
-#[cfg(windows)]
 pub fn get_result_string(himc: HIMC) -> Option<String> {
     unsafe {
         let size = ImmGetCompositionStringW(himc, GCS_RESULTSTR, None, 0);
@@ -109,7 +94,6 @@ pub fn get_result_string(himc: HIMC) -> Option<String> {
     }
 }
 
-#[cfg(windows)]
 pub fn get_candidate_list(himc: HIMC) -> Option<crate::proto::rime_service_v2::MenuProto> {
     unsafe {
         let size = ImmGetCandidateListW(himc, 0, None, 0);

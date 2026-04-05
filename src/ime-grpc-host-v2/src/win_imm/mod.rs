@@ -7,27 +7,21 @@ pub mod channel_adapter;
 pub mod vk_map;
 
 use std::collections::HashMap;
-#[cfg(windows)]
 use std::sync::OnceLock;
-#[cfg(windows)]
 use crate::win_imm::imm_ops::ImeFunctions;
 use crate::backend::RimeBackend;
 use crate::proto::rime_service_v2::{KeyEvent, RimeContextProto};
 
-#[cfg(windows)]
 extern "system" {
     pub fn FreeLibrary(hLibModule: windows::Win32::Foundation::HMODULE) -> windows::Win32::Foundation::BOOL;
 }
 
 /// The Win32 adapter that implements the RimeBackend trait.
 pub struct ImmRimeAdapter {
-    #[cfg(windows)]
     ime_functions: Option<ImeFunctions>,
-    #[cfg(windows)]
     sessions: HashMap<usize, session::WinImmSession>,
 }
 
-#[cfg(windows)]
 static IME_FUNCS: OnceLock<Option<ImeFunctions>> = OnceLock::new();
 
 impl Default for ImmRimeAdapter {
@@ -38,7 +32,6 @@ impl Default for ImmRimeAdapter {
 
 impl ImmRimeAdapter {
     pub fn new() -> Self {
-        #[cfg(windows)]
         let ime_functions = *IME_FUNCS.get_or_init(|| {
             // Hardcoded to QQPinyin for now, as requested.
             use windows::core::w;
@@ -60,9 +53,7 @@ impl ImmRimeAdapter {
         });
 
         Self {
-            #[cfg(windows)]
             ime_functions,
-            #[cfg(windows)]
             sessions: HashMap::new(),
             // Other initialization goes here
         }
@@ -71,7 +62,6 @@ impl ImmRimeAdapter {
 
 impl Drop for ImmRimeAdapter {
     fn drop(&mut self) {
-        #[cfg(windows)]
         {
             // First destroy all sessions properly
             for (_, session) in self.sessions.drain() {
@@ -89,7 +79,6 @@ impl Drop for ImmRimeAdapter {
 #[tonic::async_trait]
 impl RimeBackend for ImmRimeAdapter {
     async fn open_session(&mut self) -> Option<usize> {
-        #[cfg(windows)]
         {
             let id = self.sessions.len() + 1; // Basic sequential ID
             if let Some(ime) = &self.ime_functions {
@@ -112,7 +101,6 @@ impl RimeBackend for ImmRimeAdapter {
     }
 
     async fn destroy_session(&mut self, session_id: usize) {
-        #[cfg(windows)]
         {
             if let Some(session) = self.sessions.remove(&session_id) {
                 if let Some(ime) = &self.ime_functions {
@@ -124,7 +112,6 @@ impl RimeBackend for ImmRimeAdapter {
     }
 
     async fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
-        #[cfg(windows)]
         {
             if let Some(session) = self.sessions.get_mut(&session_id) {
                 if let Some(ime) = &self.ime_functions {
@@ -198,7 +185,6 @@ impl RimeBackend for ImmRimeAdapter {
     }
 
     async fn get_context(&mut self, session_id: usize) -> RimeContextProto {
-        #[cfg(windows)]
         {
             if let Some(session) = self.sessions.get(&session_id) {
                 let comp_str = crate::win_imm::imm_ops::get_composition_string(session.himc);
@@ -233,7 +219,6 @@ impl RimeBackend for ImmRimeAdapter {
     }
 
     async fn get_commit(&mut self, session_id: usize) -> Option<String> {
-        #[cfg(windows)]
         {
             if let Some(session) = self.sessions.get_mut(&session_id) {
                 return session.pending_commit.take();
@@ -243,7 +228,6 @@ impl RimeBackend for ImmRimeAdapter {
     }
 
     async fn select_candidate(&mut self, session_id: usize, index: usize) -> bool {
-        #[cfg(windows)]
         {
             if let Some(session) = self.sessions.get_mut(&session_id) {
                 unsafe {
