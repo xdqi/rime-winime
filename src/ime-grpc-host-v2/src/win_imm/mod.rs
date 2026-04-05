@@ -4,6 +4,7 @@ pub mod keys;
 pub mod session;
 pub mod thread_pump;
 pub mod channel_adapter;
+pub mod vk_map;
 
 use std::collections::HashMap;
 #[cfg(windows)]
@@ -120,22 +121,26 @@ impl RimeBackend for ImmRimeAdapter {
         {
             if let Some(session) = self.sessions.get_mut(&session_id) {
                 if let Some(ime) = &self.ime_functions {
-                    // Extract modifier information (assuming 0x1=Shift, 0x2=Ctrl, 0x4=Alt)
+                    // Extract modifier information
                     // Populate lpbKeyState
                     let mut key_state = [0u8; 256];
-                    let vk = key.keycode;
+                    let vk = crate::win_imm::vk_map::rime_to_vk(key.keycode);
                     let modifiers = key.modifier;
+
+                    let is_keyup = (modifiers & (1 << 14)) != 0;
 
                     // Rough mapping (will improve later with constants)
                     if (modifiers & 1) != 0 { key_state[0x10] = 0x80; } // VK_SHIFT
                     if (modifiers & 2) != 0 { key_state[0x11] = 0x80; } // VK_CONTROL
                     if (modifiers & 4) != 0 { key_state[0x12] = 0x80; } // VK_MENU
 
+                    let l_key_data = crate::win_imm::vk_map::make_l_key_data(vk, is_keyup);
+
                     let is_consumed = unsafe {
                         (ime.process_key)(
                             session.himc,
                             vk,
-                            0, // lKeyData
+                            l_key_data as u32,
                             key_state.as_ptr(),
                         )
                     };
