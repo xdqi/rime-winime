@@ -10,6 +10,7 @@ service RimeService {
   rpc GetContext(GetContextRequest) returns (GetContextResponse);
   rpc GetCommit(GetCommitRequest) returns (GetCommitResponse);
   rpc DestroySession(DestroySessionRequest) returns (DestroySessionResponse);
+  rpc SelectCandidateOnCurrentPage(SelectCandidateRequest) returns (SelectCandidateResponse);
 }
 
 // ----------------------------------------------------------------------------
@@ -100,5 +101,14 @@ message DestroySessionRequest {
 }
 
 message DestroySessionResponse {
+  bool success = 1;
+}
+
+message SelectCandidateRequest {
+  string session_id = 1;
+  int32 index = 2;
+}
+
+message SelectCandidateResponse {
   bool success = 1;
 }
