@@ -19,6 +19,7 @@ pub type PImeProcessKey = unsafe extern "system" fn(hIMC: HIMC, vKey: u32, lKeyD
 pub type PImeToAsciiEx = unsafe extern "system" fn(uVKey: u32, uScanCode: u32, lpbKeyState: *const u8, lpdwTransKey: *mut u32, fuState: u32, hIMC: HIMC) -> u32;
 
 #[cfg(windows)]
+#[derive(Clone, Copy)]
 pub struct ImeFunctions {
     pub h_module: HMODULE,
     pub inquire: PImeInquire,

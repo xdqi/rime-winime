@@ -8,6 +8,8 @@ pub mod vk_map;
 
 use std::collections::HashMap;
 #[cfg(windows)]
+use std::sync::OnceLock;
+#[cfg(windows)]
 use crate::win_imm::imm_ops::ImeFunctions;
 use crate::backend::RimeBackend;
 use crate::proto::rime_service_v2::{KeyEvent, RimeContextProto};
@@ -25,10 +27,13 @@ pub struct ImmRimeAdapter {
     sessions: HashMap<usize, session::WinImmSession>,
 }
 
+#[cfg(windows)]
+static IME_FUNCS: OnceLock<Option<ImeFunctions>> = OnceLock::new();
+
 impl ImmRimeAdapter {
     pub fn new() -> Self {
         #[cfg(windows)]
-        let ime_functions = {
+        let ime_functions = IME_FUNCS.get_or_init(|| {
             // Hardcoded to QQPinyin for now, as requested.
             use windows::core::w;
             match crate::win_imm::imm_ops::load_ime_dll(w!("C:\\windows\\system32\\QQPinyin.ime")) {
@@ -37,7 +42,7 @@ impl ImmRimeAdapter {
                     unsafe {
                         let mut ime_info = std::mem::zeroed();
                         let mut class_name = [0u16; 256];
-                        (funcs.inquire)(&mut ime_info, class_name.as_mut_ptr(), 0);
+                        let _ = (funcs.inquire)(&mut ime_info, class_name.as_mut_ptr(), 0);
                     }
                     Some(funcs)
                 },
@@ -46,7 +51,7 @@ impl ImmRimeAdapter {
                     None
                 }
             }
-        };
+        }).clone();
 
         Self {
             #[cfg(windows)]
@@ -65,17 +70,12 @@ impl Drop for ImmRimeAdapter {
             // First destroy all sessions properly
             for (_, session) in self.sessions.drain() {
                 if let Some(ime) = &self.ime_functions {
-                    unsafe { (ime.select)(session.himc, windows::Win32::Foundation::BOOL(0)) }; // FALSE
+                    unsafe { let _ = (ime.select)(session.himc, windows::Win32::Foundation::BOOL(0)); }; // FALSE
                 }
                 session.destroy();
             }
 
-            // Unload library as a final step
-            if let Some(ime) = self.ime_functions.take() {
-                unsafe {
-                    let _ = FreeLibrary(ime.h_module);
-                }
-            }
+            // We do not FreeLibrary here. DLL will be cleanly flushed on process exit.
         }
     }
 }
