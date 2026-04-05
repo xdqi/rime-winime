@@ -14,7 +14,7 @@ use proto::rime_service_v2::{
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let mut client = RimeServiceClient::connect("http://[::1]:50051").await?;
+    let mut client = RimeServiceClient::connect("http://127.0.0.1:50051").await?;
 
     tracing::info!("Connected to RimeService v2");
 

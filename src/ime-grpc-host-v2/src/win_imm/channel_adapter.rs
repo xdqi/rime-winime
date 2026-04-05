@@ -1,11 +1,12 @@
 use crate::backend::RimeBackend;
 use crate::proto::rime_service_v2::{KeyEvent, RimeContextProto};
-use std::sync::mpsc;
+use std::sync::mpsc as std_mpsc;
+use tokio::sync::oneshot;
 use std::thread;
 
 enum BackendCommand {
     OpenSession {
-        reply: mpsc::Sender<Option<usize>>,
+        reply: oneshot::Sender<Option<usize>>,
     },
     DestroySession {
         session_id: usize,
@@ -13,88 +14,99 @@ enum BackendCommand {
     ProcessKey {
         session_id: usize,
         key: KeyEvent,
-        reply: mpsc::Sender<bool>,
+        reply: oneshot::Sender<bool>,
     },
     GetContext {
         session_id: usize,
-        reply: mpsc::Sender<RimeContextProto>,
+        reply: oneshot::Sender<RimeContextProto>,
     },
     GetCommit {
         session_id: usize,
-        reply: mpsc::Sender<Option<String>>,
+        reply: oneshot::Sender<Option<String>>,
+    },
+    SelectCandidate {
+        session_id: usize,
+        index: usize,
+        reply: oneshot::Sender<bool>,
     },
 }
 
 pub struct ChannelRimeBackend {
-    tx: mpsc::Sender<BackendCommand>,
+    tx: std_mpsc::Sender<BackendCommand>,
 }
 
 impl ChannelRimeBackend {
     pub fn new(mut inner: Option<Box<dyn RimeBackend>>) -> Self {
-        let (tx, rx) = mpsc::channel();
+        let (tx, rx) = std_mpsc::channel();
         
-        // Take the inner backend if passed, or default (used in Windows IMM case)
         let _ = thread::spawn(move || {
-            // Note: If inner is None, it assumes we create it ON this thread.
-            // This is crucial for Win32 thread affinity. The window and IMM context
-            // MUST be created on the exact thread that calls them.
-            #[cfg(windows)]
             let mut runtime_backend = inner.take().unwrap_or_else(|| Box::new(crate::win_imm::ImmRimeAdapter::new()));
             
-            #[cfg(not(windows))]
-            let mut runtime_backend = inner.take().expect("Non-Windows requires a backend instance directly passed");
-
             for cmd in rx {
                 match cmd {
                     BackendCommand::OpenSession { reply } => {
-                        let _ = reply.send(runtime_backend.open_session());
+                        // Ignoring if the receiver dropped
+                        let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.open_session()));
                     }
                     BackendCommand::DestroySession { session_id } => {
-                        runtime_backend.destroy_session(session_id);
+                        let _ = tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.destroy_session(session_id));
                     }
                     BackendCommand::ProcessKey { session_id, key, reply } => {
-                        let _ = reply.send(runtime_backend.process_key(session_id, &key));
+                        let ans = tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.process_key(session_id, &key));
+                        let _ = reply.send(ans);
                     }
                     BackendCommand::GetContext { session_id, reply } => {
-                        let _ = reply.send(runtime_backend.get_context(session_id));
+                        let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.get_context(session_id)));
                     }
                     BackendCommand::GetCommit { session_id, reply } => {
-                        let _ = reply.send(runtime_backend.get_commit(session_id));
+                        let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.get_commit(session_id)));
+                    }
+                    BackendCommand::SelectCandidate { session_id, index, reply } => {
+                        let _ = reply.send(tokio::runtime::Runtime::new().unwrap().block_on(runtime_backend.select_candidate(session_id, index)));
                     }
                 }
             }
         });
 
-        Self { tx }
+        Self {
+            tx,
+        }
     }
 }
 
+#[tonic::async_trait]
 impl RimeBackend for ChannelRimeBackend {
-    fn open_session(&mut self) -> Option<usize> {
-        let (tx, rx) = mpsc::channel();
+    async fn open_session(&mut self) -> Option<usize> {
+        let (tx, rx) = oneshot::channel();
         self.tx.send(BackendCommand::OpenSession { reply: tx }).unwrap();
-        rx.recv().unwrap_or(None)
+        rx.await.unwrap_or(None)
     }
 
-    fn destroy_session(&mut self, session_id: usize) {
+    async fn destroy_session(&mut self, session_id: usize) {
         let _ = self.tx.send(BackendCommand::DestroySession { session_id });
     }
 
-    fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
-        let (tx, rx) = mpsc::channel();
+    async fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
+        let (tx, rx) = oneshot::channel();
         self.tx.send(BackendCommand::ProcessKey { session_id, key: key.clone(), reply: tx }).unwrap();
-        rx.recv().unwrap_or(false)
+        rx.await.unwrap_or(false)
     }
 
-    fn get_context(&mut self, session_id: usize) -> RimeContextProto {
-        let (tx, rx) = mpsc::channel();
+    async fn get_context(&mut self, session_id: usize) -> RimeContextProto {
+        let (tx, rx) = oneshot::channel();
         self.tx.send(BackendCommand::GetContext { session_id, reply: tx }).unwrap();
-        rx.recv().unwrap_or_default()
+        rx.await.unwrap_or_default()
     }
 
-    fn get_commit(&mut self, session_id: usize) -> Option<String> {
-        let (tx, rx) = mpsc::channel();
+    async fn get_commit(&mut self, session_id: usize) -> Option<String> {
+        let (tx, rx) = oneshot::channel();
         self.tx.send(BackendCommand::GetCommit { session_id, reply: tx }).unwrap();
-        rx.recv().unwrap_or(None)
+        rx.await.unwrap_or(None)
+    }
+
+    async fn select_candidate(&mut self, session_id: usize, index: usize) -> bool {
+        let (tx, rx) = oneshot::channel();
+        self.tx.send(BackendCommand::SelectCandidate { session_id, index, reply: tx }).unwrap();
+        rx.await.unwrap_or(false)
     }
 }

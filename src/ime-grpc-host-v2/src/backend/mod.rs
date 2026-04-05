@@ -6,19 +6,23 @@ pub mod native;
 
 use crate::proto::rime_service_v2::{KeyEvent, RimeContextProto};
 
+#[tonic::async_trait]
 pub trait RimeBackend: Send + Sync {
     /// Open a new Rime session and return the ID if successful.
-    fn open_session(&mut self) -> Option<usize>;
+    async fn open_session(&mut self) -> Option<usize>;
 
     /// Destroy a Rime session by ID.
-    fn destroy_session(&mut self, session_id: usize);
+    async fn destroy_session(&mut self, session_id: usize);
 
     /// Process a key event, returning true if consumed (accepted).
-    fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool;
+    async fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool;
 
     /// Get the current context (composition, menu, pending commit text).
-    fn get_context(&mut self, session_id: usize) -> RimeContextProto;
+    async fn get_context(&mut self, session_id: usize) -> RimeContextProto;
 
     /// Commit current selection/composition and retrieve the finalized text.
-    fn get_commit(&mut self, session_id: usize) -> Option<String>;
+    async fn get_commit(&mut self, session_id: usize) -> Option<String>;
+    
+    /// Select a candidate (trigger commit or modification on the IME).
+    async fn select_candidate(&mut self, session_id: usize, index: usize) -> bool;
 }

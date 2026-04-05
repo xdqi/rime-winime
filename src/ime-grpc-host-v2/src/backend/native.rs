@@ -68,8 +68,9 @@ impl Drop for NativeRimeBackend {
     }
 }
 
+#[tonic::async_trait]
 impl RimeBackend for NativeRimeBackend {
-    fn open_session(&mut self) -> Option<usize> {
+    async fn open_session(&mut self) -> Option<usize> {
         unsafe {
             let session_id = ((*self.api).create_session)();
             if session_id != 0 {
@@ -81,20 +82,20 @@ impl RimeBackend for NativeRimeBackend {
         }
     }
     
-    fn destroy_session(&mut self, session_id: usize) {
+    async fn destroy_session(&mut self, session_id: usize) {
         unsafe {
             ((*self.api).destroy_session)(session_id as rime_ffi::RimeSessionId);
         }
     }
 
-    fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
+    async fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
         unsafe {
             let accepted = ((*self.api).process_key)(session_id as rime_ffi::RimeSessionId, key.keycode as libc::c_int, key.modifier as libc::c_int);
             accepted != 0
         }
     }
 
-    fn get_context(&mut self, session_id: usize) -> RimeContextProto {
+    async fn get_context(&mut self, session_id: usize) -> RimeContextProto {
         unsafe {
             let mut ctx: rime_ffi::RimeContext = std::mem::zeroed();
             ctx.data_size = std::mem::size_of::<rime_ffi::RimeContext>() as libc::c_int - std::mem::size_of::<libc::c_int>() as libc::c_int;
@@ -175,7 +176,7 @@ impl RimeBackend for NativeRimeBackend {
         }
     }
 
-    fn get_commit(&mut self, session_id: usize) -> Option<String> {
+    async fn get_commit(&mut self, session_id: usize) -> Option<String> {
         unsafe {
             let mut commit: rime_ffi::RimeCommit = std::mem::zeroed();
             commit.data_size = std::mem::size_of::<rime_ffi::RimeCommit>() as libc::c_int - std::mem::size_of::<libc::c_int>() as libc::c_int;
@@ -191,5 +192,10 @@ impl RimeBackend for NativeRimeBackend {
             }
             None
         }
+    }
+
+    async fn select_candidate(&mut self, _session_id: usize, _index: usize) -> bool {
+        // Fallback or implemented for native later
+        false
     }
 }
