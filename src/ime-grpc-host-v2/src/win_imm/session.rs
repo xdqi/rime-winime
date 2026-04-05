@@ -17,6 +17,7 @@ pub struct WinImmSession {
     pub himc: HIMC,
     #[cfg(windows)]
     pub h_ime_module: HMODULE,
+    pub pending_commit: Option<String>,
 }
 
 impl WinImmSession {
@@ -47,6 +48,7 @@ impl WinImmSession {
                 hwnd,
                 himc,
                 h_ime_module,
+                pending_commit: None,
             })
         }
     }

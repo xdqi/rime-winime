@@ -80,8 +80,9 @@ impl Drop for ImmRimeAdapter {
     }
 }
 
+#[tonic::async_trait]
 impl RimeBackend for ImmRimeAdapter {
-    fn open_session(&mut self) -> Option<usize> {
+    async fn open_session(&mut self) -> Option<usize> {
         #[cfg(windows)]
         {
             let id = self.sessions.len() + 1; // Basic sequential ID
@@ -104,7 +105,7 @@ impl RimeBackend for ImmRimeAdapter {
         None
     }
 
-    fn destroy_session(&mut self, session_id: usize) {
+    async fn destroy_session(&mut self, session_id: usize) {
         #[cfg(windows)]
         {
             if let Some(mut session) = self.sessions.remove(&session_id) {
@@ -116,7 +117,7 @@ impl RimeBackend for ImmRimeAdapter {
         }
     }
 
-    fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
+    async fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
         #[cfg(windows)]
         {
             if let Some(session) = self.sessions.get_mut(&session_id) {
@@ -146,16 +147,42 @@ impl RimeBackend for ImmRimeAdapter {
                     };
 
                     if is_consumed.as_bool() {
-                        let mut trans_key = 0u32;
-                        unsafe {
+                        // The buffer starts with a count of how many messages it can hold
+                        // We allocate 1 + 3 * 256 words
+                        let mut trans_msgs = vec![0u32; 1 + 3 * 256];
+                        trans_msgs[0] = 256; // max messages
+                        
+                        let msg_count = unsafe {
                             (ime.to_ascii_ex)(
                                 vk,
                                 0, // scancode
                                 key_state.as_ptr(),
-                                &mut trans_key,
+                                trans_msgs.as_mut_ptr(),
                                 0, // fuState
                                 session.himc,
-                            );
+                            )
+                        } as i32;
+
+                        let mut has_commit_msg = false;
+                        if msg_count > 0 && msg_count <= 256 {
+                            for i in 0..(msg_count as usize) {
+                                // index 0 is capacity/count, actual array starts at 1
+                                let msg_base = 1 + i * 3;
+                                let message = trans_msgs[msg_base];
+                                let _wparam = trans_msgs[msg_base + 1];
+                                let lparam = trans_msgs[msg_base + 2];
+                                if message == 0x010F /* WM_IME_COMPOSITION */ {
+                                    if (lparam & 0x0800 /* GCS_RESULTSTR */) != 0 {
+                                        has_commit_msg = true;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if has_commit_msg {
+                            if let Some(rstr) = crate::win_imm::imm_ops::get_result_string(session.himc) {
+                                session.pending_commit = Some(rstr);
+                            }
                         }
                         return true;
                     }
@@ -165,7 +192,7 @@ impl RimeBackend for ImmRimeAdapter {
         false
     }
 
-    fn get_context(&mut self, session_id: usize) -> RimeContextProto {
+    async fn get_context(&mut self, session_id: usize) -> RimeContextProto {
         #[cfg(windows)]
         {
             if let Some(session) = self.sessions.get(&session_id) {
@@ -200,13 +227,17 @@ impl RimeBackend for ImmRimeAdapter {
         }
     }
 
-    fn get_commit(&mut self, session_id: usize) -> Option<String> {
+    async fn get_commit(&mut self, session_id: usize) -> Option<String> {
         #[cfg(windows)]
         {
-            if let Some(session) = self.sessions.get(&session_id) {
-                return crate::win_imm::imm_ops::get_result_string(session.himc);
+            if let Some(session) = self.sessions.get_mut(&session_id) {
+                return session.pending_commit.take();
             }
         }
         None
+    }
+
+    async fn select_candidate(&mut self, _session_id: usize, _index: usize) -> bool {
+        false
     }
 }
