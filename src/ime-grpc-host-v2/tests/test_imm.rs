@@ -5,6 +5,23 @@ use ime_grpc_host_v2::backend;
 use ime_grpc_host_v2::win_imm;
 
 #[cfg(windows)]
+fn get_ime_path() -> String {
+    if let Ok(path) = std::env::var("IME_PATH") {
+        return path;
+    }
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(idx) = args.iter().position(|a| a == "--ime-path") {
+        if idx + 1 < args.len() {
+            return args[idx + 1].clone();
+        }
+    }
+    if let Some(arg) = args.iter().find(|a| a.to_lowercase().ends_with(".ime")) {
+        return arg.clone();
+    }
+    "Z:\\opt\\sogou\\syswow64\\SogouPY.ime".to_string()
+}
+
+#[cfg(windows)]
 async fn run_test_sequence(adapter: &mut win_imm::ImmRimeAdapter, expected_commit: &str, keys: &[(u32, u32, char)]){
     use backend::RimeBackend;
     use proto::rime_service_v2::KeyEvent;
@@ -72,7 +89,7 @@ async fn run_test_sequence(adapter: &mut win_imm::ImmRimeAdapter, expected_commi
 #[cfg(windows)]
 #[tokio::test]
 async fn test_basic_nihao_commit() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (0x6E, 0, 'n'), (0x69, 0, 'i'), (0x68, 0, 'h'), (0x61, 0, 'a'), (0x6F, 0, 'o'), (0x20, 0, ' ')
     ];
@@ -82,7 +99,7 @@ async fn test_basic_nihao_commit() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_multi_round_nihaoshijie_1() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (0x6E, 0, 'n'), (0x69, 0, 'i'), (0x68, 0, 'h'), (0x61, 0, 'a'), (0x6F, 0, 'o'),
         (0x73, 0, 's'), (0x68, 0, 'h'), (0x69, 0, 'i'), (0x6A, 0, 'j'), (0x69, 0, 'i'),
@@ -94,7 +111,7 @@ async fn test_multi_round_nihaoshijie_1() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_multi_round_nihaoshijie_2_partial() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (0x6E, 0, 'n'), (0x69, 0, 'i'), (0x68, 0, 'h'), (0x61, 0, 'a'), (0x6F, 0, 'o'),
         (0x73, 0, 's'), (0x68, 0, 'h'), (0x69, 0, 'i'), (0x6A, 0, 'j'), (0x69, 0, 'i'),
@@ -106,9 +123,9 @@ async fn test_multi_round_nihaoshijie_2_partial() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_uppercase_upan() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
-        (0x55, 1, 'U'), (0x70, 0, 'p'), (0x61, 0, 'a'), (0x6E, 0, 'n'), (0x20, 0, ' ')
+        (0x55, 0, 'U'), (0x70, 0, 'p'), (0x61, 0, 'a'), (0x6E, 0, 'n'), (0x20, 0, ' ')
     ];
     run_test_sequence(&mut adapter, "U盘", &keys).await;
 }
@@ -116,7 +133,7 @@ async fn test_uppercase_upan() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_punctuations_and_numbers() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (0x31, 0, '1'), (0x32, 0, '2'), (0x33, 0, '3'), (0x2C, 0, ',')
     ];
@@ -126,9 +143,9 @@ async fn test_punctuations_and_numbers() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_complex_time_format() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
-        (0x32, 0, '2'), (0x33, 0, '3'), (0x3A, 1, ':'), (0x35, 0, '5'), (0x39, 0, '9')
+        (0x32, 0, '2'), (0x33, 0, '3'), (0x3A, 0, ':'), (0x35, 0, '5'), (0x39, 0, '9')
     ];
     run_test_sequence(&mut adapter, "：", &keys).await;
 }
@@ -136,7 +153,7 @@ async fn test_complex_time_format() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_meizi_commit() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (0x4D, 0, 'm'), (0x49, 0, 'i'), (0x5A, 0, 'z'), (0x49, 0, 'i'), (0x31, 0, '1')
     ];
@@ -146,7 +163,7 @@ async fn test_meizi_commit() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_mp3() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (0x4D, 0, 'm'), (0x50, 0, 'p'), (0x33, 0, '3')
     ];
