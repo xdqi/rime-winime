@@ -298,8 +298,21 @@ impl RimeBackend for ImmRimeAdapter {
         {
             if let Some(session) = self.sessions.get(&session_id) {
                 let comp_str = crate::win_imm::imm_ops::get_composition_string(session.himc);
-                let menu_proto = crate::win_imm::imm_ops::get_candidate_list(session.himc);
-                
+                let mut menu_proto = crate::win_imm::imm_ops::get_candidate_list(session.himc);
+
+                // Set select_keys based on Sogou's internal mode flag (hPrivate offset 4)
+                if let Some(ref mut menu) = menu_proto {
+                    let n = menu.page_size as usize;
+                    let is_vmode = crate::win_imm::imm_ops::get_sogou_mode_flag(session.himc)
+                        .map(|f| f == crate::win_imm::imm_ops::SOGOU_MODE_VMODE)
+                        .unwrap_or(false);
+                    if is_vmode {
+                        menu.select_keys = "abcdefghij"[..n.min(10)].to_string();
+                    } else {
+                        menu.select_keys = "1234567890"[..n.min(10)].to_string();
+                    }
+                }
+
                 let mut context = RimeContextProto {
                     composition: None,
                     menu: menu_proto,
