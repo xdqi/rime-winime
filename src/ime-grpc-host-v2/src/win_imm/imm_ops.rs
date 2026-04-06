@@ -3,52 +3,6 @@ use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::UI::Input::Ime::{HIMC, ImmGetCompositionStringW, ImmGetCandidateListW, GCS_COMPSTR, GCS_COMPATTR, GCS_RESULTSTR, GCS_CURSORPOS, CANDIDATELIST};
 use windows::core::{s, PCWSTR};
 
-// HIMCC is a handle type (opaque pointer) — not in the windows crate
-type HIMCC = *mut core::ffi::c_void;
-
-unsafe extern "system" {
-    fn ImmLockIMC(himc: HIMC) -> *mut core::ffi::c_void;
-    fn ImmUnlockIMC(himc: HIMC) -> i32;
-    fn ImmLockIMCC(imcc: HIMCC) -> *mut core::ffi::c_void;
-    fn ImmUnlockIMCC(imcc: HIMCC) -> i32;
-}
-
-/// INPUTCONTEXT field offsets (32-bit Windows, verified by raw byte dump):
-///   offset 292: HIMCC hPrivate
-const INPUTCONTEXT_HPRIVATE_OFFSET: usize = 292;
-
-/// Sogou IME stores a mode flag at offset 4 of the hPrivate data:
-///   0x01 = normal pinyin mode  (select_keys = "12345...")
-///   0x40 = v-mode              (select_keys = "abcde...")
-const SOGOU_HPRIVATE_MODE_OFFSET: usize = 4;
-pub const SOGOU_MODE_VMODE: u32 = 0x40;
-
-/// Read Sogou's internal mode flag from the IME private data.
-/// Returns the DWORD at hPrivate offset 4, or None if unavailable.
-pub fn get_sogou_mode_flag(himc: HIMC) -> Option<u32> {
-    unsafe {
-        let pic = ImmLockIMC(himc);
-        if pic.is_null() {
-            return None;
-        }
-        // Read hPrivate handle at known offset in INPUTCONTEXT
-        let h_private = *((pic as *const u8).add(INPUTCONTEXT_HPRIVATE_OFFSET) as *const HIMCC);
-        if h_private.is_null() {
-            ImmUnlockIMC(himc);
-            return None;
-        }
-        let pp = ImmLockIMCC(h_private);
-        if pp.is_null() {
-            ImmUnlockIMC(himc);
-            return None;
-        }
-        let mode_flag = *((pp as *const u8).add(SOGOU_HPRIVATE_MODE_OFFSET) as *const u32);
-        ImmUnlockIMCC(h_private);
-        ImmUnlockIMC(himc);
-        Some(mode_flag)
-    }
-}
-
 pub type PImeInquire = unsafe extern "system" fn(lp_imeinfo: *mut windows::Win32::UI::Input::Ime::IMEINFO, lpsz_wnd_class: *mut u16, dw_system_info_flags: u32) -> BOOL;
 pub type PImeSelect = unsafe extern "system" fn(h_imc: HIMC, f_select: BOOL) -> BOOL;
 pub type PImeProcessKey = unsafe extern "system" fn(h_imc: HIMC, v_key: u32, l_key_data: u32, lpb_key_state: *const u8) -> BOOL;
