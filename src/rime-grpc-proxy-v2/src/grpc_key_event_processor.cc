@@ -1,5 +1,6 @@
 #include "grpc_key_event_processor.h"
 #include <rime/config.h>
+#include <rime/schema.h>
 
 namespace rime {
 
