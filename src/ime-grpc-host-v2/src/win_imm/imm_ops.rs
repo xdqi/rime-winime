@@ -147,7 +147,7 @@ pub fn get_candidate_list(himc: HIMC) -> Option<crate::proto::rime_service_v2::M
 
         let cand_list = &*p_cand_list;
         let mut candidates = Vec::new();
-
+        
         // Ensure within bounds, dwOffset acts as the starting element of an array
         let offsets_ptr = cand_list.dwOffset.as_ptr();
         
