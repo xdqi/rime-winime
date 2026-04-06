@@ -7,7 +7,7 @@ namespace rime {
 GrpcKeyEventProcessor::GrpcKeyEventProcessor(const Ticket& ticket)
     : Processor(ticket) {
   std::string backend_address = "127.0.0.1:50051";
-  int rpc_timeout_ms = 100;
+  int rpc_timeout_ms = 200;
   bool fallback_on_error = true;
 
   if (auto* config = ticket.engine->schema()->config()) {

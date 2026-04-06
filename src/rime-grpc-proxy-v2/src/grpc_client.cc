@@ -15,7 +15,7 @@ static std::shared_ptr<GrpcImeClientV2> g_client;
 
 std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::Instance() {
     if (!g_client) {
-        g_client = std::make_shared<GrpcImeClientV2>("127.0.0.1:50051", 100, true);
+        g_client = std::make_shared<GrpcImeClientV2>("127.0.0.1:50051", 200, true);
     }
     return g_client;
 }
@@ -116,11 +116,7 @@ bool GrpcImeClientV2::ProcessKey(uintptr_t session_id, int keycode, int mask) {
   if (status.ok()) {
     return resp.accepted();
   } else {
-    // If connection dropped/server restarted, gRPC fails. 
-    // We should clear the old session so it can be re-opened if the client tries to handle it,
-    // though typically the frontend (fcitx) decides when to open new sessions.
-    // At least we return whether we fallback to default English typing or eat the key.
-    return fallback_on_error_ ? false : true; // eat key if we don't fallback
+    return fallback_on_error_ ? false : true;
   }
   return false;
 }
