@@ -303,13 +303,33 @@ impl RimeBackend for ImmRimeAdapter {
                 // Set select_keys based on Sogou's internal mode flag (hPrivate offset 4)
                 if let Some(ref mut menu) = menu_proto {
                     let n = menu.page_size as usize;
-                    let is_vmode = crate::win_imm::imm_ops::get_sogou_mode_flag(session.himc)
+                    let mode_flag = crate::win_imm::imm_ops::get_sogou_mode_flag(session.himc);
+                    let is_vmode = mode_flag
                         .map(|f| f == crate::win_imm::imm_ops::SOGOU_MODE_VMODE)
                         .unwrap_or(false);
                     if is_vmode {
                         menu.select_keys = "abcdefghij"[..n.min(10)].to_string();
                     } else {
                         menu.select_keys = "1234567890"[..n.min(10)].to_string();
+                    }
+
+                    // Assert mode detection consistency with preedit
+                    if let Some(ref comp_data) = comp_str {
+                        let preedit = &comp_data.text;
+                        if preedit.starts_with('v') && preedit.len() > 1 {
+                            let rest = &preedit[1..];
+                            let is_numeric_pattern = rest.chars().all(|c| c.is_ascii_digit() || c == '.');
+                            let is_alpha_pattern = rest.chars().next().map(|c| c.is_ascii_lowercase()).unwrap_or(false);
+                            tracing::info!(
+                                "select_keys check: preedit='{}', mode_flag={:#X?}, is_vmode={}, select_keys='{}'",
+                                preedit, mode_flag, is_vmode, menu.select_keys
+                            );
+                            if is_numeric_pattern {
+                                assert!(is_vmode, "v-mode preedit '{}' but mode_flag={:#X?}", preedit, mode_flag);
+                            } else if is_alpha_pattern {
+                                assert!(!is_vmode, "pinyin preedit '{}' but mode_flag={:#X?}", preedit, mode_flag);
+                            }
+                        }
                     }
                 }
 
