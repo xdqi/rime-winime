@@ -298,8 +298,23 @@ impl RimeBackend for ImmRimeAdapter {
         {
             if let Some(session) = self.sessions.get(&session_id) {
                 let comp_str = crate::win_imm::imm_ops::get_composition_string(session.himc);
-                let menu_proto = crate::win_imm::imm_ops::get_candidate_list(session.himc);
+                let mut menu_proto = crate::win_imm::imm_ops::get_candidate_list(session.himc);
                 
+                // Derive select_keys from composition: v-mode uses alphabetic keys
+                // because number keys are part of the input expression (e.g. v1.1)
+                let is_vmode = comp_str.as_ref()
+                    .map(|c| c.text.starts_with('v') || c.text.starts_with('V'))
+                    .unwrap_or(false);
+
+                if let Some(ref mut menu) = menu_proto {
+                    let n = menu.page_size as usize;
+                    if is_vmode {
+                        menu.select_keys = "abcdefghij"[..n.min(10)].to_string();
+                    } else {
+                        menu.select_keys = "1234567890"[..n.min(10)].to_string();
+                    }
+                }
+
                 let mut context = RimeContextProto {
                     composition: None,
                     menu: menu_proto,
