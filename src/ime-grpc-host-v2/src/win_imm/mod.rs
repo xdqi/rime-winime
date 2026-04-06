@@ -10,6 +10,29 @@ use std::collections::HashMap;
 use std::sync::OnceLock;
 use crate::win_imm::imm_ops::ImeFunctions;
 use crate::backend::RimeBackend;
+
+/// Known paired punctuation: maps opener to closer.
+/// When the IME commits "opener+closer" as a single result string,
+/// we split them: commit only the opener, store the closer to append to the next commit.
+fn split_paired_punct(s: &str) -> Option<(&str, &str)> {
+    // Each pair: (opener, closer) as &str
+    const PAIRS: &[(&str, &str)] = &[
+        ("\u{FF08}", "\u{FF09}"),   // （ ）
+        ("\u{201C}", "\u{201D}"),   // " "
+        ("\u{2018}", "\u{2019}"),   // ' '
+        ("\u{3010}", "\u{3011}"),   // 【 】
+        ("\u{300A}", "\u{300B}"),   // 《 》
+        ("\u{300C}", "\u{300D}"),   // 「 」
+        ("\u{300E}", "\u{300F}"),   // 『 』
+        ("\u{3008}", "\u{3009}"),   // 〈 〉
+    ];
+    for &(opener, closer) in PAIRS {
+        if s == format!("{}{}", opener, closer) {
+            return Some((opener, closer));
+        }
+    }
+    None
+}
 use crate::proto::rime_service_v2::{KeyEvent, RimeContextProto};
 
 extern "system" {
@@ -222,11 +245,46 @@ impl RimeBackend for ImmRimeAdapter {
                                 s.push_str(&rstr);
                                 session.pending_commit = Some(s);
                                 tracing::info!("Collected GCS_RESULTSTR: {}", rstr);
+                            } else {
+                                tracing::warn!("GCS_RESULTSTR flag was set but get_result_string returned None");
                             }
                         } else if !char_commits.is_empty() {
                             let mut s = session.pending_commit.take().unwrap_or_default();
                             s.push_str(&char_commits);
                             session.pending_commit = Some(s);
+                        }
+                        // Probe: pump the hidden window's message queue to see if the IME
+                        // injected any keybd_event (e.g. VK_LEFT for paired brackets)
+                        unsafe {
+                            let mut msg: windows::Win32::UI::WindowsAndMessaging::MSG = std::mem::zeroed();
+                            let mut queue_msgs = Vec::new();
+                            while windows::Win32::UI::WindowsAndMessaging::PeekMessageW(
+                                &mut msg,
+                                session.hwnd,
+                                0, 0,
+                                windows::Win32::UI::WindowsAndMessaging::PM_REMOVE,
+                            ).as_bool() {
+                                queue_msgs.push((msg.message, msg.wParam.0 as u32, msg.lParam.0 as u32));
+                                // Prevent infinite loop: limit to 32 messages
+                                if queue_msgs.len() >= 32 { break; }
+                            }
+                            // Also check thread messages (HWND(0))
+                            while windows::Win32::UI::WindowsAndMessaging::PeekMessageW(
+                                &mut msg,
+                                windows::Win32::Foundation::HWND(0 as _),
+                                0, 0,
+                                windows::Win32::UI::WindowsAndMessaging::PM_REMOVE,
+                            ).as_bool() {
+                                queue_msgs.push((msg.message, msg.wParam.0 as u32, msg.lParam.0 as u32));
+                                if queue_msgs.len() >= 64 { break; }
+                            }
+                            if !queue_msgs.is_empty() {
+                                for (m, wp, lp) in &queue_msgs {
+                                    tracing::info!("Queued msg: 0x{:X}, wp: 0x{:X}, lp: 0x{:X}", m, wp, lp);
+                                }
+                            } else {
+                                tracing::info!("No queued messages after ImeToAsciiEx");
+                            }
                         }
                         return true;
                     }
