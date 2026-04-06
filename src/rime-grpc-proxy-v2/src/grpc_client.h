@@ -3,6 +3,8 @@
 
 #include <string>
 #include <memory>
+#include <optional>
+#include <regex>
 #include <grpcpp/grpcpp.h>
 #include <mutex>
 #include <unordered_map>
@@ -21,6 +23,13 @@ public:
   ~GrpcImeClientV2();
 
   bool FallbackOnError() const { return fallback_on_error_; }
+  bool HasVModeRegex() const { return v_mode_regex_.has_value(); }
+  bool MatchesVMode(const std::string& preedit) const {
+    return v_mode_regex_ && std::regex_search(preedit, *v_mode_regex_);
+  }
+  void SetVModeRegex(const std::string& pattern) {
+    v_mode_regex_.emplace(pattern, std::regex::ECMAScript);
+  }
   void SetupClientContext(grpc::ClientContext* context);
 
   uintptr_t OpenSession();
@@ -40,6 +49,7 @@ private:
 
   int timeout_ms_ = 100;
   bool fallback_on_error_ = true;
+  std::optional<std::regex> v_mode_regex_;
 };
 
 } // namespace rime

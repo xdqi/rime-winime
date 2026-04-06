@@ -256,6 +256,24 @@ static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* c
             context->commit_text_preview = new char[proto.commit_text_preview().length() + 1];
             std::strcpy(context->commit_text_preview, proto.commit_text_preview().c_str());
         }
+
+        // Override select_keys based on v_mode_preedit_regex config
+        if (context->composition.preedit && context->menu.page_size > 0) {
+            auto cli = GrpcImeClientV2::Instance();
+            if (cli && cli->HasVModeRegex()) {
+                const char* alpha_keys = "abcdefghij";
+                const char* num_keys   = "1234567890";
+                bool is_vmode = cli->MatchesVMode(context->composition.preedit);
+                const char* src_keys = is_vmode ? alpha_keys : num_keys;
+                int n = context->menu.page_size;
+                if (n > 10) n = 10;
+                // Free previous allocation if any
+                delete[] context->menu.select_keys;
+                context->menu.select_keys = new char[n + 1];
+                std::memcpy(context->menu.select_keys, src_keys, n);
+                context->menu.select_keys[n] = '\0';
+            }
+        }
         
         // Save snapshot for future keyup-skip returns
         SaveContextSnapshot(context);
