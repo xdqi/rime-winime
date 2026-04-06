@@ -39,6 +39,21 @@ static Bool (*original_get_commit)(RimeSessionId, RIME_FLAVORED(RimeCommit)*);
 static Bool (*original_select_candidate)(RimeSessionId, size_t);
 static Bool (*original_select_candidate_on_current_page)(RimeSessionId, size_t);
 
+// --- Per-keystroke state to eliminate redundant RPCs ---
+// Tracks whether the most recent MyProcessKey was locally skipped (keyup)
+// or returned false (key not consumed). In either case, subsequent
+// GetContext/GetCommit/GetStatus can reuse the previous result instead
+// of making a new RPC, because IME state didn't change.
+// These are NOT cross-keystroke caches — they are refreshed on every
+// keydown ProcessKey that actually goes to the host.
+static bool g_last_was_keyup_skip = false;
+static bool g_last_process_key_accepted = false;
+// Snapshot of the latest context/status obtained from a real RPC.
+// Used to serve keyup-triggered GetContext/GetStatus without RPC.
+static RIME_FLAVORED(RimeContext) g_last_context;
+static bool g_has_last_context = false;
+static Bool g_last_is_composing = False;
+
 static RimeSessionId MyCreateSession() {
     LogWithTimestamp( "[grpc_proxy] MyCreateSession called!\n");
     auto client = GrpcImeClientV2::Instance();
@@ -66,19 +81,129 @@ static Bool MyFindSession(RimeSessionId session_id) {
 }
 
 static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
+    // Skip key release events — Sogou IME never consumes them (always BOOL(0)),
+    // but each RPC costs ~10ms. Skipping halves the RPC count.
+    // kReleaseMask = 1 << 30
+    if (mask & (1 << 30)) {
+        g_last_was_keyup_skip = true;
+        return False;
+    }
+    g_last_was_keyup_skip = false;
+
     LogWithTimestamp( "[grpc_proxy] MyProcessKey called(session=%lu, keycode=%d, mask=%x)\n", (unsigned long)session_id, keycode, mask);
     auto client = GrpcImeClientV2::Instance();
     if (client) {
         bool res = client->ProcessKey(session_id, keycode, mask);
+        g_last_process_key_accepted = res;
         LogWithTimestamp( "[grpc_proxy] MyProcessKey returning %d\n", res);
         return res;
     }
+    g_last_process_key_accepted = false;
     return False;
 }
 
+// Helper: deep-copy a RimeContext into the global snapshot.
+// Frees previous snapshot data first.
+static void SaveContextSnapshot(const RIME_FLAVORED(RimeContext)* src) {
+    // Free old snapshot allocations
+    if (g_has_last_context) {
+        delete[] g_last_context.composition.preedit;
+        delete[] g_last_context.menu.select_keys;
+        for (int i = 0; i < g_last_context.menu.num_candidates; ++i) {
+            delete[] g_last_context.menu.candidates[i].text;
+            delete[] g_last_context.menu.candidates[i].comment;
+        }
+        delete[] g_last_context.menu.candidates;
+        delete[] g_last_context.commit_text_preview;
+    }
+    RIME_STRUCT_CLEAR(g_last_context);
+    g_last_context.data_size = src->data_size;
+
+    g_last_context.composition.length = src->composition.length;
+    g_last_context.composition.cursor_pos = src->composition.cursor_pos;
+    g_last_context.composition.sel_start = src->composition.sel_start;
+    g_last_context.composition.sel_end = src->composition.sel_end;
+    if (src->composition.preedit) {
+        g_last_context.composition.preedit = new char[strlen(src->composition.preedit) + 1];
+        std::strcpy(g_last_context.composition.preedit, src->composition.preedit);
+    }
+
+    g_last_context.menu.page_size = src->menu.page_size;
+    g_last_context.menu.page_no = src->menu.page_no;
+    g_last_context.menu.is_last_page = src->menu.is_last_page;
+    g_last_context.menu.highlighted_candidate_index = src->menu.highlighted_candidate_index;
+    g_last_context.menu.num_candidates = src->menu.num_candidates;
+    if (src->menu.select_keys) {
+        g_last_context.menu.select_keys = new char[strlen(src->menu.select_keys) + 1];
+        std::strcpy(g_last_context.menu.select_keys, src->menu.select_keys);
+    }
+    if (src->menu.num_candidates > 0 && src->menu.candidates) {
+        g_last_context.menu.candidates = new RimeCandidate[src->menu.num_candidates];
+        for (int i = 0; i < src->menu.num_candidates; ++i) {
+            auto* t = src->menu.candidates[i].text;
+            auto* c = src->menu.candidates[i].comment;
+            g_last_context.menu.candidates[i].text = new char[strlen(t ? t : "") + 1];
+            std::strcpy(g_last_context.menu.candidates[i].text, t ? t : "");
+            g_last_context.menu.candidates[i].comment = new char[strlen(c ? c : "") + 1];
+            std::strcpy(g_last_context.menu.candidates[i].comment, c ? c : "");
+        }
+    }
+    if (RIME_STRUCT_HAS_MEMBER(*src, src->commit_text_preview) && src->commit_text_preview) {
+        g_last_context.commit_text_preview = new char[strlen(src->commit_text_preview) + 1];
+        std::strcpy(g_last_context.commit_text_preview, src->commit_text_preview);
+    }
+    g_has_last_context = true;
+    g_last_is_composing = (src->composition.length > 0) ? True : False;
+}
+
+// Helper: copy the saved snapshot into a caller-provided RimeContext.
+static Bool RestoreContextSnapshot(RIME_FLAVORED(RimeContext)* dst) {
+    if (!g_has_last_context) return False;
+    RIME_STRUCT_CLEAR(*dst);
+    dst->composition.length = g_last_context.composition.length;
+    dst->composition.cursor_pos = g_last_context.composition.cursor_pos;
+    dst->composition.sel_start = g_last_context.composition.sel_start;
+    dst->composition.sel_end = g_last_context.composition.sel_end;
+    if (g_last_context.composition.preedit) {
+        dst->composition.preedit = new char[strlen(g_last_context.composition.preedit) + 1];
+        std::strcpy(dst->composition.preedit, g_last_context.composition.preedit);
+    }
+    dst->menu.page_size = g_last_context.menu.page_size;
+    dst->menu.page_no = g_last_context.menu.page_no;
+    dst->menu.is_last_page = g_last_context.menu.is_last_page;
+    dst->menu.highlighted_candidate_index = g_last_context.menu.highlighted_candidate_index;
+    dst->menu.num_candidates = g_last_context.menu.num_candidates;
+    if (g_last_context.menu.select_keys && RIME_STRUCT_HAS_MEMBER(*dst, dst->menu.select_keys)) {
+        dst->menu.select_keys = new char[strlen(g_last_context.menu.select_keys) + 1];
+        std::strcpy(dst->menu.select_keys, g_last_context.menu.select_keys);
+    }
+    if (g_last_context.menu.num_candidates > 0 && g_last_context.menu.candidates) {
+        dst->menu.candidates = new RimeCandidate[g_last_context.menu.num_candidates];
+        for (int i = 0; i < g_last_context.menu.num_candidates; ++i) {
+            auto* t = g_last_context.menu.candidates[i].text;
+            auto* c = g_last_context.menu.candidates[i].comment;
+            dst->menu.candidates[i].text = new char[strlen(t) + 1];
+            std::strcpy(dst->menu.candidates[i].text, t);
+            dst->menu.candidates[i].comment = new char[strlen(c) + 1];
+            std::strcpy(dst->menu.candidates[i].comment, c);
+        }
+    }
+    if (RIME_STRUCT_HAS_MEMBER(*dst, dst->commit_text_preview) && g_last_context.commit_text_preview) {
+        dst->commit_text_preview = new char[strlen(g_last_context.commit_text_preview) + 1];
+        std::strcpy(dst->commit_text_preview, g_last_context.commit_text_preview);
+    }
+    return True;
+}
+
 static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* context) {
-    LogWithTimestamp( "[grpc_proxy] MyGetContext called(session=%lu)\n", (unsigned long)session_id);
     if (!context || context->data_size <= 0) return False;
+
+    // After a locally-skipped keyup, IME state is unchanged — return saved snapshot.
+    if (g_last_was_keyup_skip && g_has_last_context) {
+        return RestoreContextSnapshot(context);
+    }
+
+    LogWithTimestamp( "[grpc_proxy] MyGetContext called(session=%lu)\n", (unsigned long)session_id);
     
     auto client = GrpcImeClientV2::Instance();
     if (!client) return False;
@@ -132,14 +257,24 @@ static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* c
             std::strcpy(context->commit_text_preview, proto.commit_text_preview().c_str());
         }
         
+        // Save snapshot for future keyup-skip returns
+        SaveContextSnapshot(context);
         return True;
     }
     return False;
 }
 
 static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* status) {
-    LogWithTimestamp( "[grpc_proxy] MyGetStatus called(session=%lu)\n", (unsigned long)session_id);
     if (!status || status->data_size <= 0) return False;
+
+    // After keyup skip, derive from saved snapshot — no RPC needed.
+    if (g_last_was_keyup_skip) {
+        RIME_STRUCT_CLEAR(*status);
+        status->is_composing = g_last_is_composing;
+        return True;
+    }
+
+    LogWithTimestamp( "[grpc_proxy] MyGetStatus called(session=%lu)\n", (unsigned long)session_id);
     
     auto client = GrpcImeClientV2::Instance();
     if (!client) return False;
@@ -148,14 +283,21 @@ static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* sta
     if (client->GetContext(session_id, &proto)) {
         RIME_STRUCT_CLEAR(*status);
         status->is_composing = proto.has_composition();
+        g_last_is_composing = status->is_composing;
         return True;
     }
     return False;
 }
 
 static Bool MyGetCommit(RimeSessionId session_id, RIME_FLAVORED(RimeCommit)* commit) {
-    LogWithTimestamp( "[grpc_proxy] MyGetCommit called(session=%lu)\n", (unsigned long)session_id);
     if (!commit || commit->data_size <= 0) return False;
+
+    // After keyup skip or when ProcessKey returned false, no new commit is possible.
+    if (g_last_was_keyup_skip || !g_last_process_key_accepted) {
+        return False;
+    }
+
+    LogWithTimestamp( "[grpc_proxy] MyGetCommit called(session=%lu)\n", (unsigned long)session_id);
     
     auto client = GrpcImeClientV2::Instance();
     if (!client) return False;
