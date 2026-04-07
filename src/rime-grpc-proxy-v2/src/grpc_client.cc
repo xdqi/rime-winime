@@ -47,8 +47,9 @@ std::string GrpcImeClientV2::FindSession(uintptr_t session_id) {
   return (it != sessions_.end()) ? it->second : std::string();
 }
 
-GrpcImeClientV2::~GrpcImeClientV2() {
+void GrpcImeClientV2::Shutdown() {
   std::lock_guard<std::mutex> lock(mutex_);
+  if (!stub_) return;  // already shut down
   for (const auto& pair : sessions_) {
     ClientContext context;
     SetupClientContext(&context);
@@ -58,6 +59,19 @@ GrpcImeClientV2::~GrpcImeClientV2() {
     stub_->DestroySession(&context, req, &resp);
   }
   sessions_.clear();
+  stub_.reset();  // release the gRPC channel while it's still safe
+}
+
+void GrpcImeClientV2::ResetInstance() {
+  auto& g_client = GetClientShared();
+  g_client.reset();
+}
+
+GrpcImeClientV2::~GrpcImeClientV2() {
+  // During DLL unload gRPC threads are already dead; any RPC here
+  // would deadlock on the IOCP.  Only do safe, non-blocking cleanup.
+  sessions_.clear();
+  stub_.reset();
 }
 
 uintptr_t GrpcImeClientV2::OpenSession() {

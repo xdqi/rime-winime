@@ -413,6 +413,17 @@ static void rime_grpc_proxy_v2_initialize() {
   }
 }
 
-static void rime_grpc_proxy_v2_finalize() {}
+static void rime_grpc_proxy_v2_finalize() {
+  // Tear down gRPC client NOW, while background I/O threads are still
+  // alive.  If we let the static shared_ptr destructor run during
+  // DLL_PROCESS_DETACH, the DestroySession RPCs deadlock on the IOCP
+  // because LdrShutdownProcess already killed the worker threads.
+  auto client = GrpcImeClientV2::Instance();
+  if (client) {
+    client->Shutdown();
+  }
+  GrpcImeClientV2::ResetInstance();
+  LOG(INFO) << "[grpc_proxy] finalized, gRPC client destroyed.";
+}
 
 RIME_REGISTER_MODULE(grpc_proxy_v2)

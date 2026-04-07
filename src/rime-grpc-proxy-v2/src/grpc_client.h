@@ -30,6 +30,13 @@ public:
   }
   void SetupClientContext(grpc::ClientContext* context);
 
+  // Gracefully shut down: destroy remote sessions and release the gRPC
+  // channel.  Must be called while gRPC background threads are still alive
+  // (i.e. NOT during DllMain/DLL_PROCESS_DETACH).
+  void Shutdown();
+  // Clear the global singleton so it can be re-created after a restart.
+  static void ResetInstance();
+
   bool HasSession(uintptr_t session_id);
   uintptr_t OpenSession();
   void DestroySession(uintptr_t session_id);
