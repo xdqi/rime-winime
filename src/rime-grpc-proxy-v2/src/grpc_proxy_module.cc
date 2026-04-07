@@ -5,25 +5,9 @@
 #include <chrono>
 #include <ctime>
 #include <cstdarg>
+#include <glog/logging.h>
 
 #include "grpc_key_event_processor.h"
-
-static void LogWithTimestamp(const char* format, ...) {
-    auto now = std::chrono::system_clock::now();
-    auto now_c = std::chrono::system_clock::to_time_t(now);
-    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-    struct tm parts;
-    localtime_r(&now_c, &parts);
-
-    fprintf(stderr, "[%04d-%02d-%02d %02d:%02d:%02d.%03d] ",
-            parts.tm_year + 1900, parts.tm_mon + 1, parts.tm_mday,
-            parts.tm_hour, parts.tm_min, parts.tm_sec, (int)ms.count());
-
-    va_list args;
-    va_start(args, format);
-    vfprintf(stderr, format, args);
-    va_end(args);
-}
 
 #include "grpc_client.h"
 
@@ -55,14 +39,14 @@ static bool g_has_last_context = false;
 static Bool g_last_is_composing = False;
 
 static RimeSessionId MyCreateSession() {
-    LogWithTimestamp( "[grpc_proxy] MyCreateSession called!\n");
+    LOG(INFO) << "[grpc_proxy] MyCreateSession called!";
     auto client = GrpcImeClientV2::Instance();
     if (client) {
         auto id = client->OpenSession();
-        LogWithTimestamp( "[grpc_proxy] MyCreateSession returned %lu\n", (unsigned long)id);
+        LOG(INFO) << "[grpc_proxy] MyCreateSession returned " << id;
         return id;
     }
-    LogWithTimestamp( "[grpc_proxy] MyCreateSession failed because no client!\n");
+    LOG(ERROR) << "[grpc_proxy] MyCreateSession failed because no client!";
     return 0;
 }
 
@@ -90,12 +74,12 @@ static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
     }
     g_last_was_keyup_skip = false;
 
-    LogWithTimestamp( "[grpc_proxy] MyProcessKey called(session=%lu, keycode=%d, mask=%x)\n", (unsigned long)session_id, keycode, mask);
+    LOG(INFO) << "[grpc_proxy] MyProcessKey called(session=" << session_id << ", keycode=" << keycode << ", mask=" << mask << ")";
     auto client = GrpcImeClientV2::Instance();
     if (client) {
         bool res = client->ProcessKey(session_id, keycode, mask);
         g_last_process_key_accepted = res;
-        LogWithTimestamp( "[grpc_proxy] MyProcessKey returning %d\n", res);
+        LOG(INFO) << "[grpc_proxy] MyProcessKey returning " << res;
         return res;
     }
     g_last_process_key_accepted = false;
@@ -203,7 +187,7 @@ static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* c
         return RestoreContextSnapshot(context);
     }
 
-    LogWithTimestamp( "[grpc_proxy] MyGetContext called(session=%lu)\n", (unsigned long)session_id);
+    LOG(INFO) << "[grpc_proxy] MyGetContext called(session=" << session_id << ")";
     
     auto client = GrpcImeClientV2::Instance();
     if (!client) return False;
@@ -292,7 +276,7 @@ static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* sta
         return True;
     }
 
-    LogWithTimestamp( "[grpc_proxy] MyGetStatus called(session=%lu)\n", (unsigned long)session_id);
+    LOG(INFO) << "[grpc_proxy] MyGetStatus called(session=" << session_id << ")";
     
     auto client = GrpcImeClientV2::Instance();
     if (!client) return False;
@@ -315,7 +299,7 @@ static Bool MyGetCommit(RimeSessionId session_id, RIME_FLAVORED(RimeCommit)* com
         return False;
     }
 
-    LogWithTimestamp( "[grpc_proxy] MyGetCommit called(session=%lu)\n", (unsigned long)session_id);
+    LOG(INFO) << "[grpc_proxy] MyGetCommit called(session=" << session_id << ")";
     
     auto client = GrpcImeClientV2::Instance();
     if (!client) return False;
@@ -331,7 +315,7 @@ static Bool MyGetCommit(RimeSessionId session_id, RIME_FLAVORED(RimeCommit)* com
 }
 
 static Bool MySelectCandidate(RimeSessionId session_id, size_t index) {
-    LogWithTimestamp( "[grpc_proxy] MySelectCandidate called(session=%lu, index=%zu)\n", (unsigned long)session_id, index);
+    LOG(INFO) << "[grpc_proxy] MySelectCandidate called(session=" << session_id << ", index=" << index << ")";
     auto client = GrpcImeClientV2::Instance();
     if (client) {
         return client->SelectCandidate(session_id, index) ? True : False;
@@ -340,7 +324,7 @@ static Bool MySelectCandidate(RimeSessionId session_id, size_t index) {
 }
 
 static Bool MySelectCandidateOnCurrentPage(RimeSessionId session_id, size_t index) {
-    LogWithTimestamp( "[grpc_proxy] MySelectCandidateOnCurrentPage called(session=%lu, index=%zu)\n", (unsigned long)session_id, index);
+    LOG(INFO) << "[grpc_proxy] MySelectCandidateOnCurrentPage called(session=" << session_id << ", index=" << index << ")";
     auto client = GrpcImeClientV2::Instance();
     if (client) {
         return client->SelectCandidateOnCurrentPage(session_id, index) ? True : False;
@@ -349,7 +333,7 @@ static Bool MySelectCandidateOnCurrentPage(RimeSessionId session_id, size_t inde
 }
 
 static void rime_grpc_proxy_v2_initialize() {
-  LogWithTimestamp( "[grpc_proxy] rime_grpc_proxy_v2_initialize called!\n");
+  LOG(INFO) << "[grpc_proxy] rime_grpc_proxy_v2_initialize called!";
   RimeApi* api = const_cast<RimeApi*>(rime_get_api());
   if (api) {
       original_create_session = api->create_session;
@@ -371,9 +355,9 @@ static void rime_grpc_proxy_v2_initialize() {
       api->get_commit = MyGetCommit;
       api->select_candidate = MySelectCandidate;
       api->select_candidate_on_current_page = MySelectCandidateOnCurrentPage;
-      LogWithTimestamp( "[grpc_proxy] RimeApi successfully overridden!\n");
+      LOG(INFO) << "[grpc_proxy] RimeApi successfully overridden!";
   } else {
-      LogWithTimestamp( "[grpc_proxy] rime_get_api() returned NULL!\n");
+      LOG(ERROR) << "[grpc_proxy] rime_get_api() returned NULL!";
   }
 }
 
