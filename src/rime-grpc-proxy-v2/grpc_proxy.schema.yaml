@@ -7,7 +7,6 @@ schema:
 grpc_proxy:
   backend_address: "127.0.0.1:50051"
   rpc_timeout_ms: 200
-  fallback_on_error: true
   # When preedit matches this regex, use alphabetic select_keys (a-e)
   # instead of numeric (1-5).  Default: "^v\\d" (Sogou v-mode)
   v_mode_preedit_regex: "^v\\d"

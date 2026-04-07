@@ -15,12 +15,11 @@ namespace rime {
 class GrpcImeClientV2 {
 public:
   static std::shared_ptr<GrpcImeClientV2> Instance();
-  static std::shared_ptr<GrpcImeClientV2> GetOrCreate(const std::string& target_address, int timeout_ms, bool fallback_on_error);
+  static std::shared_ptr<GrpcImeClientV2> GetOrCreate(const std::string& target_address, int timeout_ms);
   
-  GrpcImeClientV2(const std::string& target_address, int timeout_ms, bool fallback_on_error);
+  GrpcImeClientV2(const std::string& target_address, int timeout_ms);
   ~GrpcImeClientV2();
 
-  bool FallbackOnError() const { return fallback_on_error_; }
   bool HasVModeRegex() const { return v_mode_regex_.has_value(); }
   const std::string& TargetAddress() const { return target_address_; }
   bool MatchesVMode(const std::string& preedit) const {
@@ -51,7 +50,6 @@ private:
 
   std::string target_address_;
   int timeout_ms_ = 100;
-  bool fallback_on_error_ = true;
   std::optional<std::regex> v_mode_regex_;
 };
 

@@ -48,12 +48,6 @@ static RimeSessionId MyCreateSession() {
         LOG(INFO) << "[grpc_proxy] MyCreateSession called! Connecting to backend at: " << client->TargetAddress();
         auto id = client->OpenSession();
         LOG(INFO) << "[grpc_proxy] MyCreateSession returned " << id;
-        
-        // Fallback if RPC failed and fallback is enabled
-        if (id == 0 && client->FallbackOnError() && original_create_session) {
-            LOG(WARNING) << "[grpc_proxy] RPC OpenSession failed. Falling back to local Rime engine.";
-            return original_create_session();
-        }
         return id;
     }
     LOG(ERROR) << "[grpc_proxy] MyCreateSession failed because no client!";
