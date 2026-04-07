@@ -5,22 +5,66 @@
 #include <rime/engine.h>
 #include <iostream>
 
+#include <rime/service.h>
+#include <rime/config.h>
+
+#include <fstream>
+#include <regex>
+
 namespace rime {
 
 using namespace rime::service::v2;
 using grpc::ClientContext;
 using grpc::Status;
 
-static std::shared_ptr<GrpcImeClientV2> g_client;
+static std::mutex& GetClientMutex() {
+    static std::mutex s_mutex;
+    return s_mutex;
+}
+
+static std::shared_ptr<GrpcImeClientV2>& GetClientShared() {
+    static std::shared_ptr<GrpcImeClientV2> s_client;
+    return s_client;
+}
 
 std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::Instance() {
+    std::lock_guard<std::mutex> lock(GetClientMutex());
+    auto& g_client = GetClientShared();
     if (!g_client) {
-        g_client = std::make_shared<GrpcImeClientV2>("127.0.0.1:50051", 200, true);
+        std::string target_address = "127.0.0.1:50051";
+        int timeout_ms = 200;
+        bool fallback = true;
+        std::string v_mode_regex;
+
+        // Use Rime's native Config system to read from user yaml files.
+        auto user_dir = rime::Service::instance().deployer().user_data_dir;
+        
+        rime::Config proxy_config;
+        if (proxy_config.LoadFromFile(user_dir / "grpc_proxy.schema.yaml")) {
+            proxy_config.GetString("grpc_proxy/backend_address", &target_address);
+            proxy_config.GetInt("grpc_proxy/rpc_timeout_ms", &timeout_ms);
+            proxy_config.GetBool("grpc_proxy/fallback_on_error", &fallback);
+            proxy_config.GetString("grpc_proxy/v_mode_preedit_regex", &v_mode_regex);
+        }
+
+        rime::Config custom_config;
+        if (custom_config.LoadFromFile(user_dir / "default.custom.yaml")) {
+            custom_config.GetString("patch/grpc_proxy/backend_address", &target_address);
+            custom_config.GetInt("patch/grpc_proxy/rpc_timeout_ms", &timeout_ms);
+            custom_config.GetBool("patch/grpc_proxy/fallback_on_error", &fallback);
+            custom_config.GetString("patch/grpc_proxy/v_mode_preedit_regex", &v_mode_regex);
+        }
+        g_client = std::make_shared<GrpcImeClientV2>(target_address, timeout_ms, fallback);
+        if (!v_mode_regex.empty()) {
+            g_client->SetVModeRegex(v_mode_regex);
+        }
     }
     return g_client;
 }
 
 std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::GetOrCreate(const std::string& target_address, int timeout_ms, bool fallback_on_error) {
+    std::lock_guard<std::mutex> lock(GetClientMutex());
+    auto& g_client = GetClientShared();
     if (!g_client) {
         g_client = std::make_shared<GrpcImeClientV2>(target_address, timeout_ms, fallback_on_error);
     }
@@ -28,7 +72,7 @@ std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::GetOrCreate(const std::string&
 }
 
 GrpcImeClientV2::GrpcImeClientV2(const std::string& target_address, int timeout_ms, bool fallback_on_error)
-    : timeout_ms_(timeout_ms), fallback_on_error_(fallback_on_error) {
+    : target_address_(target_address), timeout_ms_(timeout_ms), fallback_on_error_(fallback_on_error) {
   auto channel = grpc::CreateChannel(target_address, grpc::InsecureChannelCredentials());
   stub_ = RimeService::NewStub(channel);
 }
@@ -38,7 +82,10 @@ void GrpcImeClientV2::SetupClientContext(grpc::ClientContext* context) {
         context->set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds(timeout_ms_));
     }
 }
-
+bool GrpcImeClientV2::HasSession(uintptr_t session_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return sessions_.find(session_id) != sessions_.end();
+}
 GrpcImeClientV2::~GrpcImeClientV2() {
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto& pair : sessions_) {

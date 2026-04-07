@@ -24,6 +24,7 @@ public:
 
   bool FallbackOnError() const { return fallback_on_error_; }
   bool HasVModeRegex() const { return v_mode_regex_.has_value(); }
+  const std::string& TargetAddress() const { return target_address_; }
   bool MatchesVMode(const std::string& preedit) const {
     return v_mode_regex_ && std::regex_search(preedit, *v_mode_regex_);
   }
@@ -32,6 +33,7 @@ public:
   }
   void SetupClientContext(grpc::ClientContext* context);
 
+  bool HasSession(uintptr_t session_id);
   uintptr_t OpenSession();
   void DestroySession(uintptr_t session_id);
   bool ProcessKey(uintptr_t session_id, int keycode, int mask);
@@ -47,6 +49,7 @@ private:
   std::unordered_map<uintptr_t, std::string> sessions_;
   uintptr_t next_id_ = 1;
 
+  std::string target_address_;
   int timeout_ms_ = 100;
   bool fallback_on_error_ = true;
   std::optional<std::regex> v_mode_regex_;
