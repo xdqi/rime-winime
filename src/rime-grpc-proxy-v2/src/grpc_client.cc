@@ -79,6 +79,13 @@ bool GrpcImeClientV2::HasSession(uintptr_t session_id) {
   std::lock_guard<std::mutex> lock(mutex_);
   return sessions_.find(session_id) != sessions_.end();
 }
+
+std::string GrpcImeClientV2::FindSession(uintptr_t session_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = sessions_.find(session_id);
+  return (it != sessions_.end()) ? it->second : std::string();
+}
+
 GrpcImeClientV2::~GrpcImeClientV2() {
   std::lock_guard<std::mutex> lock(mutex_);
   for (const auto& pair : sessions_) {
@@ -131,14 +138,7 @@ void GrpcImeClientV2::DestroySession(uintptr_t session_id) {
 }
 
 bool GrpcImeClientV2::ProcessKey(uintptr_t session_id, int keycode, int mask) {
-  std::string my_session;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-      my_session = it->second;
-    }
-  }
+  std::string my_session = FindSession(session_id);
   if (my_session.empty()) return false;
 
   ClientContext context;
@@ -160,14 +160,7 @@ bool GrpcImeClientV2::ProcessKey(uintptr_t session_id, int keycode, int mask) {
 }
 
 bool GrpcImeClientV2::GetContext(uintptr_t session_id, RimeContextProto* out_context) {
-  std::string my_session;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-      my_session = it->second;
-    }
-  }
+  std::string my_session = FindSession(session_id);
   if (my_session.empty() || !out_context) return false;
 
   ClientContext context;
@@ -186,14 +179,7 @@ bool GrpcImeClientV2::GetContext(uintptr_t session_id, RimeContextProto* out_con
 }
 
 bool GrpcImeClientV2::GetCommit(uintptr_t session_id, std::string* out_commit) {
-  std::string my_session;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-      my_session = it->second;
-    }
-  }
+  std::string my_session = FindSession(session_id);
   if (my_session.empty() || !out_commit) return false;
 
   ClientContext context;
@@ -212,14 +198,7 @@ bool GrpcImeClientV2::GetCommit(uintptr_t session_id, std::string* out_commit) {
 }
 
 bool GrpcImeClientV2::SelectCandidateOnCurrentPage(uintptr_t session_id, int index) {
-  std::string my_session;
-  {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto it = sessions_.find(session_id);
-    if (it != sessions_.end()) {
-      my_session = it->second;
-    }
-  }
+  std::string my_session = FindSession(session_id);
   if (my_session.empty()) return false;
 
   grpc::ClientContext context;

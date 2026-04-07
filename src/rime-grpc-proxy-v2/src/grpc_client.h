@@ -41,6 +41,8 @@ public:
   bool SelectCandidate(uintptr_t session_id, int index);
 
 private:
+  std::string FindSession(uintptr_t session_id);
+
   std::unique_ptr<service::v2::RimeService::Stub> stub_;
   
   std::mutex mutex_;
