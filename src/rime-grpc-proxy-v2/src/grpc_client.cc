@@ -155,10 +155,8 @@ bool GrpcImeClientV2::ProcessKey(uintptr_t session_id, int keycode, int mask) {
   
   if (status.ok()) {
     return resp.accepted();
-  } else {
-    return fallback_on_error_ ? false : true;
   }
-  return false;
+  return fallback_on_error_ ? false : true;
 }
 
 bool GrpcImeClientV2::GetContext(uintptr_t session_id, RimeContextProto* out_context) {
