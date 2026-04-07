@@ -8,6 +8,8 @@
 
 using namespace rime;
 
+static constexpr int kRimeReleaseMask = 1 << 30;
+
 // Allocate and copy a C string (caller owns the result).
 static char* StrDup(const char* s) {
     if (!s) return nullptr;
@@ -81,7 +83,7 @@ static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
     // Skip key release events — Sogou IME never consumes them (always BOOL(0)),     
     // but each RPC costs ~10ms. Skipping halves the RPC count.
     // kReleaseMask = 1 << 30
-    if (mask & (1 << 30)) {
+    if (mask & kRimeReleaseMask) {
         g_last_was_keyup_skip = true;
         return False;
     }
@@ -347,7 +349,7 @@ static Bool MySelectCandidate(RimeSessionId session_id, size_t index) {
     LOG(INFO) << "[grpc_proxy] MySelectCandidate called(session=" << session_id << ", index=" << index << ")";
     auto client = GrpcImeClientV2::Instance();
     if (client) {
-        return client->SelectCandidate(session_id, index) ? True : False;
+        return client->SelectCandidate(session_id, static_cast<int>(index)) ? True : False;
     }
     return False;
 }
@@ -356,7 +358,7 @@ static Bool MySelectCandidateOnCurrentPage(RimeSessionId session_id, size_t inde
     LOG(INFO) << "[grpc_proxy] MySelectCandidateOnCurrentPage called(session=" << session_id << ", index=" << index << ")";
     auto client = GrpcImeClientV2::Instance();
     if (client) {
-        return client->SelectCandidateOnCurrentPage(session_id, index) ? True : False;
+        return client->SelectCandidateOnCurrentPage(session_id, static_cast<int>(index)) ? True : False;
     }
     return False;
 }
