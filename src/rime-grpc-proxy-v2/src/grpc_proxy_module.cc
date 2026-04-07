@@ -1,5 +1,8 @@
 #include <rime_api.h>
+#include <rime/component.h>
 #include <rime/key_event.h>
+#include <rime/registry.h>
+#include <rime/schema.h>
 #include <cstring>
 #include <glog/logging.h>
 
@@ -45,12 +48,16 @@ static Bool g_last_is_composing = False;
 static RimeSessionId MyCreateSession() {
     auto client = GrpcImeClientV2::Instance();
     if (client) {
-        LOG(INFO) << "[grpc_proxy] MyCreateSession called! Connecting to backend at: " << client->TargetAddress();
+        LOG(INFO) << "[grpc_proxy] MyCreateSession: connecting to " << client->TargetAddress();
         auto id = client->OpenSession();
-        LOG(INFO) << "[grpc_proxy] MyCreateSession returned " << id;
-        return id;
+        if (id != 0) {
+            LOG(INFO) << "[grpc_proxy] MyCreateSession: gRPC session " << id;
+            return id;
+        }
+        LOG(WARNING) << "[grpc_proxy] MyCreateSession: RPC failed, falling back to local rime.";
+    } else {
+        LOG(INFO) << "[grpc_proxy] MyCreateSession: client not yet initialized, using local rime.";
     }
-    LOG(ERROR) << "[grpc_proxy] MyCreateSession failed because no client!";
     return original_create_session ? original_create_session() : 0;
 }
 
@@ -357,6 +364,26 @@ static Bool MySelectCandidateOnCurrentPage(RimeSessionId session_id, size_t inde
 
 static void rime_grpc_proxy_v2_initialize() {
   LOG(INFO) << "[grpc_proxy] rime_grpc_proxy_v2_initialize called!";
+  Registry& r = Registry::instance();
+  r.Register("grpc_key_event_processor", new Component<GrpcKeyEventProcessor>);
+
+  // Read schema config early so the gRPC client is ready before the first
+  // create_session call (which precedes processor construction).
+  {
+    Schema schema("grpc_proxy");
+    if (auto* config = schema.config()) {
+      string address = "127.0.0.1:50051";
+      int timeout_ms = 200;
+      config->GetString("grpc_proxy/backend_address", &address);
+      config->GetInt("grpc_proxy/rpc_timeout_ms", &timeout_ms);
+      GrpcImeClientV2::GetOrCreate(address, timeout_ms);
+      LOG(INFO) << "[grpc_proxy] client initialized: " << address
+                << " timeout=" << timeout_ms << "ms";
+    } else {
+      LOG(WARNING) << "[grpc_proxy] failed to load grpc_proxy schema config";
+    }
+  }
+
   RimeApi* api = const_cast<RimeApi*>(rime_get_api());
   if (api) {
       original_create_session = api->create_session;
