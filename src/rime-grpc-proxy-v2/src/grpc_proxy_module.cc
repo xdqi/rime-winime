@@ -1,10 +1,6 @@
-#include <rime/component.h>
-#include <rime/registry.h>
 #include <rime_api.h>
+#include <rime/key_event.h>
 #include <cstring>
-#include <chrono>
-#include <ctime>
-#include <cstdarg>
 #include <glog/logging.h>
 
 #include "grpc_key_event_processor.h"

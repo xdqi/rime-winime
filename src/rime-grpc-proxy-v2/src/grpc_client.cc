@@ -1,15 +1,8 @@
 #include "grpc_client.h"
 #include <grpcpp/grpcpp.h>
 #include "rime_service.grpc.pb.h"
-#include <rime/key_event.h>
-#include <rime/engine.h>
-#include <iostream>
-
 #include <rime/service.h>
 #include <rime/config.h>
-
-#include <fstream>
-#include <regex>
 
 namespace rime {
 

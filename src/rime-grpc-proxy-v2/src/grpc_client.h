@@ -1,16 +1,14 @@
 #ifndef RIME_GRPC_CLIENT_V2_H_
 #define RIME_GRPC_CLIENT_V2_H_
 
-#include <string>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <regex>
-#include <grpcpp/grpcpp.h>
-#include <mutex>
+#include <string>
 #include <unordered_map>
+#include <grpcpp/grpcpp.h>
 #include "rime_service.grpc.pb.h"
-#include <rime/key_event.h>
-#include <rime/engine.h>
 
 namespace rime {
 

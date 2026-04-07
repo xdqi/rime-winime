@@ -1,10 +1,6 @@
 #include <rime/engine.h>
-#include <rime/context.h>
 #include <rime/processor.h>
-#include "rime_service.grpc.pb.h"
 #include "grpc_client.h"
-
-using namespace rime::service::v2;
 
 namespace rime {
 
