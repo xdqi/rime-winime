@@ -8,7 +8,6 @@
 #include <glog/logging.h>
 
 #include "grpc_key_event_processor.h"
-
 #include "grpc_client.h"
 
 using namespace rime;
@@ -39,33 +38,42 @@ static bool g_has_last_context = false;
 static Bool g_last_is_composing = False;
 
 static RimeSessionId MyCreateSession() {
-    LOG(INFO) << "[grpc_proxy] MyCreateSession called!";
     auto client = GrpcImeClientV2::Instance();
     if (client) {
+        LOG(INFO) << "[grpc_proxy] MyCreateSession called! Connecting to backend at: " << client->TargetAddress();
         auto id = client->OpenSession();
         LOG(INFO) << "[grpc_proxy] MyCreateSession returned " << id;
+        
+        // Fallback if RPC failed and fallback is enabled
+        if (id == 0 && client->FallbackOnError() && original_create_session) {
+            LOG(WARNING) << "[grpc_proxy] RPC OpenSession failed. Falling back to local Rime engine.";
+            return original_create_session();
+        }
         return id;
     }
     LOG(ERROR) << "[grpc_proxy] MyCreateSession failed because no client!";
-    return 0;
+    return original_create_session ? original_create_session() : 0;
 }
 
 static Bool MyDestroySession(RimeSessionId session_id) {
     auto client = GrpcImeClientV2::Instance();
-    if (client) {
+    if (client && client->HasSession(session_id)) {
         client->DestroySession(session_id);
         return True;
     }
-    return False;
+    return original_destroy_session ? original_destroy_session(session_id) : False;
 }
 
 static Bool MyFindSession(RimeSessionId session_id) {
-    // If it's non-zero we just consider it found for basic tests, ideally check if it exists in the map
-    return session_id != 0 ? True : False;
+    auto client = GrpcImeClientV2::Instance();
+    if (client && client->HasSession(session_id)) {
+        return True;
+    }
+    return original_find_session ? original_find_session(session_id) : False;
 }
 
 static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
-    // Skip key release events — Sogou IME never consumes them (always BOOL(0)),
+    // Skip key release events — Sogou IME never consumes them (always BOOL(0)),     
     // but each RPC costs ~10ms. Skipping halves the RPC count.
     // kReleaseMask = 1 << 30
     if (mask & (1 << 30)) {
@@ -76,11 +84,15 @@ static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
 
     LOG(INFO) << "[grpc_proxy] MyProcessKey called(session=" << session_id << ", keycode=" << keycode << ", mask=" << mask << ")";
     auto client = GrpcImeClientV2::Instance();
-    if (client) {
+    if (client && client->HasSession(session_id)) {
         bool res = client->ProcessKey(session_id, keycode, mask);
         g_last_process_key_accepted = res;
         LOG(INFO) << "[grpc_proxy] MyProcessKey returning " << res;
         return res;
+    }
+    
+    if (original_process_key) {
+        return original_process_key(session_id, keycode, mask);
     }
     g_last_process_key_accepted = false;
     return False;
@@ -182,16 +194,21 @@ static Bool RestoreContextSnapshot(RIME_FLAVORED(RimeContext)* dst) {
 static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* context) {
     if (!context || context->data_size <= 0) return False;
 
+    auto client = GrpcImeClientV2::Instance();
+    if (!client || !client->HasSession(session_id)) {
+        if (original_get_context) {
+            return original_get_context(session_id, context);
+        }
+        return False;
+    }
+
     // After a locally-skipped keyup, IME state is unchanged — return saved snapshot.
     if (g_last_was_keyup_skip && g_has_last_context) {
         return RestoreContextSnapshot(context);
     }
 
     LOG(INFO) << "[grpc_proxy] MyGetContext called(session=" << session_id << ")";
-    
-    auto client = GrpcImeClientV2::Instance();
-    if (!client) return False;
-    
+
     service::v2::RimeContextProto proto;
     if (client->GetContext(session_id, &proto)) {
         RIME_STRUCT_CLEAR(*context);
@@ -269,22 +286,45 @@ static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* c
 static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* status) {
     if (!status || status->data_size <= 0) return False;
 
+    auto client = GrpcImeClientV2::Instance();
+    if (!client || !client->HasSession(session_id)) {
+        if (original_get_status) {
+            return original_get_status(session_id, status);
+        }
+        return False;
+    }
+
     // After keyup skip, derive from saved snapshot — no RPC needed.
     if (g_last_was_keyup_skip) {
         RIME_STRUCT_CLEAR(*status);
         status->is_composing = g_last_is_composing;
+        
+        char* proxy_id = new char[5];
+        std::strcpy(proxy_id, "grpc");
+        status->schema_id = proxy_id;
+
+        char* proxy_name = new char[11];
+        std::strcpy(proxy_name, "gRPC Proxy");
+        status->schema_name = proxy_name;
+        
         return True;
     }
 
     LOG(INFO) << "[grpc_proxy] MyGetStatus called(session=" << session_id << ")";
-    
-    auto client = GrpcImeClientV2::Instance();
-    if (!client) return False;
 
     service::v2::RimeContextProto proto;
     if (client->GetContext(session_id, &proto)) {
         RIME_STRUCT_CLEAR(*status);
         status->is_composing = proto.has_composition();
+        
+        char* proxy_id = new char[5];
+        std::strcpy(proxy_id, "grpc");
+        status->schema_id = proxy_id;
+
+        char* proxy_name = new char[11];
+        std::strcpy(proxy_name, "gRPC Proxy");
+        status->schema_name = proxy_name;
+        
         g_last_is_composing = status->is_composing;
         return True;
     }
@@ -294,16 +334,21 @@ static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* sta
 static Bool MyGetCommit(RimeSessionId session_id, RIME_FLAVORED(RimeCommit)* commit) {
     if (!commit || commit->data_size <= 0) return False;
 
+    auto client = GrpcImeClientV2::Instance();
+    if (!client || !client->HasSession(session_id)) {
+        if (original_get_commit) {
+            return original_get_commit(session_id, commit);
+        }
+        return False;
+    }
+
     // After keyup skip or when ProcessKey returned false, no new commit is possible.
     if (g_last_was_keyup_skip || !g_last_process_key_accepted) {
         return False;
     }
 
     LOG(INFO) << "[grpc_proxy] MyGetCommit called(session=" << session_id << ")";
-    
-    auto client = GrpcImeClientV2::Instance();
-    if (!client) return False;
-    
+
     std::string text;
     if (client->GetCommit(session_id, &text) && !text.empty()) {
         RIME_STRUCT_CLEAR(*commit);
