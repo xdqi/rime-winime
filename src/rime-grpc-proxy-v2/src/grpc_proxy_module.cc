@@ -16,6 +16,7 @@ static RimeSessionId (*original_create_session)();
 static Bool (*original_destroy_session)(RimeSessionId);
 static Bool (*original_find_session)(RimeSessionId);
 static Bool (*original_process_key)(RimeSessionId, int, int);
+static Bool (*original_simulate_key_sequence)(RimeSessionId, const char*);
 static Bool (*original_get_context)(RimeSessionId, RIME_FLAVORED(RimeContext)*);
 static Bool (*original_get_status)(RimeSessionId, RIME_FLAVORED(RimeStatus)*);
 static Bool (*original_get_commit)(RimeSessionId, RIME_FLAVORED(RimeCommit)*);
@@ -96,6 +97,23 @@ static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
     }
     g_last_process_key_accepted = false;
     return False;
+}
+
+static Bool MySimulateKeySequence(RimeSessionId session_id, const char* key_sequence) {
+    LOG(INFO) << "[grpc_proxy] MySimulateKeySequence called: " << key_sequence;
+    auto client = GrpcImeClientV2::Instance();
+    if (!client || !client->HasSession(session_id)) {
+        return original_simulate_key_sequence ? original_simulate_key_sequence(session_id, key_sequence) : False;
+    }
+    rime::KeySequence keys;
+    if (!keys.Parse(key_sequence)) {
+        LOG(ERROR) << "[grpc_proxy] error parsing input: '" << key_sequence << "'";
+        return False;
+    }
+    for (const rime::KeyEvent& key : keys) {
+        MyProcessKey(session_id, key.keycode(), key.modifier());
+    }
+    return True;
 }
 
 // Helper: deep-copy a RimeContext into the global snapshot.
@@ -385,6 +403,7 @@ static void rime_grpc_proxy_v2_initialize() {
       original_destroy_session = api->destroy_session;
       original_find_session = api->find_session;
       original_process_key = api->process_key;
+      original_simulate_key_sequence = api->simulate_key_sequence;
       original_get_context = api->get_context;
       original_get_status = api->get_status;
       original_get_commit = api->get_commit;
@@ -395,6 +414,7 @@ static void rime_grpc_proxy_v2_initialize() {
       api->destroy_session = MyDestroySession;
       api->find_session = MyFindSession;
       api->process_key = MyProcessKey;
+      api->simulate_key_sequence = MySimulateKeySequence;
       api->get_context = MyGetContext;
       api->get_status = MyGetStatus;
       api->get_commit = MyGetCommit;
