@@ -1,8 +1,6 @@
 #include "grpc_client.h"
 #include <grpcpp/grpcpp.h>
 #include "rime_service.grpc.pb.h"
-#include <rime/service.h>
-#include <rime/config.h>
 
 namespace rime {
 
@@ -10,50 +8,16 @@ using namespace rime::service::v2;
 using grpc::ClientContext;
 using grpc::Status;
 
-static std::mutex& GetClientMutex() {
-    static std::mutex s_mutex;
-    return s_mutex;
-}
-
 static std::shared_ptr<GrpcImeClientV2>& GetClientShared() {
     static std::shared_ptr<GrpcImeClientV2> s_client;
     return s_client;
 }
 
 std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::Instance() {
-    std::lock_guard<std::mutex> lock(GetClientMutex());
-    auto& g_client = GetClientShared();
-    if (!g_client) {
-        std::string target_address = "127.0.0.1:50051";
-        int timeout_ms = 200;
-        std::string v_mode_regex;
-
-        // Use Rime's native Config system to read from user yaml files.
-        auto user_dir = rime::Service::instance().deployer().user_data_dir;
-        
-        rime::Config proxy_config;
-        if (proxy_config.LoadFromFile(user_dir / "grpc_proxy.schema.yaml")) {
-            proxy_config.GetString("grpc_proxy/backend_address", &target_address);
-            proxy_config.GetInt("grpc_proxy/rpc_timeout_ms", &timeout_ms);
-            proxy_config.GetString("grpc_proxy/v_mode_preedit_regex", &v_mode_regex);
-        }
-
-        rime::Config custom_config;
-        if (custom_config.LoadFromFile(user_dir / "default.custom.yaml")) {
-            custom_config.GetString("patch/grpc_proxy/backend_address", &target_address);
-            custom_config.GetInt("patch/grpc_proxy/rpc_timeout_ms", &timeout_ms);
-            custom_config.GetString("patch/grpc_proxy/v_mode_preedit_regex", &v_mode_regex);
-        }
-        g_client = std::make_shared<GrpcImeClientV2>(target_address, timeout_ms);
-        if (!v_mode_regex.empty()) {
-            g_client->SetVModeRegex(v_mode_regex);
-        }
-    }
-    return g_client;
+    return GetClientShared();
 }
 
 std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::GetOrCreate(const std::string& target_address, int timeout_ms) {
-    std::lock_guard<std::mutex> lock(GetClientMutex());
     auto& g_client = GetClientShared();
     if (!g_client) {
         g_client = std::make_shared<GrpcImeClientV2>(target_address, timeout_ms);
