@@ -8,6 +8,14 @@
 
 using namespace rime;
 
+// Allocate and copy a C string (caller owns the result).
+static char* StrDup(const char* s) {
+    if (!s) return nullptr;
+    auto* p = new char[std::strlen(s) + 1];
+    std::strcpy(p, s);
+    return p;
+}
+
 static RimeSessionId (*original_create_session)();
 static Bool (*original_destroy_session)(RimeSessionId);
 static Bool (*original_find_session)(RimeSessionId);
@@ -133,34 +141,23 @@ static void SaveContextSnapshot(const RIME_FLAVORED(RimeContext)* src) {
     g_last_context.composition.cursor_pos = src->composition.cursor_pos;
     g_last_context.composition.sel_start = src->composition.sel_start;
     g_last_context.composition.sel_end = src->composition.sel_end;
-    if (src->composition.preedit) {
-        g_last_context.composition.preedit = new char[strlen(src->composition.preedit) + 1];
-        std::strcpy(g_last_context.composition.preedit, src->composition.preedit);
-    }
+    g_last_context.composition.preedit = StrDup(src->composition.preedit);
 
     g_last_context.menu.page_size = src->menu.page_size;
     g_last_context.menu.page_no = src->menu.page_no;
     g_last_context.menu.is_last_page = src->menu.is_last_page;
     g_last_context.menu.highlighted_candidate_index = src->menu.highlighted_candidate_index;
     g_last_context.menu.num_candidates = src->menu.num_candidates;
-    if (src->menu.select_keys) {
-        g_last_context.menu.select_keys = new char[strlen(src->menu.select_keys) + 1];
-        std::strcpy(g_last_context.menu.select_keys, src->menu.select_keys);
-    }
+    g_last_context.menu.select_keys = StrDup(src->menu.select_keys);
     if (src->menu.num_candidates > 0 && src->menu.candidates) {
         g_last_context.menu.candidates = new RimeCandidate[src->menu.num_candidates];
         for (int i = 0; i < src->menu.num_candidates; ++i) {
-            auto* t = src->menu.candidates[i].text;
-            auto* c = src->menu.candidates[i].comment;
-            g_last_context.menu.candidates[i].text = new char[strlen(t ? t : "") + 1];
-            std::strcpy(g_last_context.menu.candidates[i].text, t ? t : "");
-            g_last_context.menu.candidates[i].comment = new char[strlen(c ? c : "") + 1];
-            std::strcpy(g_last_context.menu.candidates[i].comment, c ? c : "");
+            g_last_context.menu.candidates[i].text = StrDup(src->menu.candidates[i].text ? src->menu.candidates[i].text : "");
+            g_last_context.menu.candidates[i].comment = StrDup(src->menu.candidates[i].comment ? src->menu.candidates[i].comment : "");
         }
     }
-    if (RIME_STRUCT_HAS_MEMBER(*src, src->commit_text_preview) && src->commit_text_preview) {
-        g_last_context.commit_text_preview = new char[strlen(src->commit_text_preview) + 1];
-        std::strcpy(g_last_context.commit_text_preview, src->commit_text_preview);
+    if (RIME_STRUCT_HAS_MEMBER(*src, src->commit_text_preview)) {
+        g_last_context.commit_text_preview = StrDup(src->commit_text_preview);
     }
     g_has_last_context = true;
     g_last_is_composing = (src->composition.length > 0) ? True : False;
@@ -174,33 +171,24 @@ static Bool RestoreContextSnapshot(RIME_FLAVORED(RimeContext)* dst) {
     dst->composition.cursor_pos = g_last_context.composition.cursor_pos;
     dst->composition.sel_start = g_last_context.composition.sel_start;
     dst->composition.sel_end = g_last_context.composition.sel_end;
-    if (g_last_context.composition.preedit) {
-        dst->composition.preedit = new char[strlen(g_last_context.composition.preedit) + 1];
-        std::strcpy(dst->composition.preedit, g_last_context.composition.preedit);
-    }
+    dst->composition.preedit = StrDup(g_last_context.composition.preedit);
     dst->menu.page_size = g_last_context.menu.page_size;
     dst->menu.page_no = g_last_context.menu.page_no;
     dst->menu.is_last_page = g_last_context.menu.is_last_page;
     dst->menu.highlighted_candidate_index = g_last_context.menu.highlighted_candidate_index;
     dst->menu.num_candidates = g_last_context.menu.num_candidates;
     if (g_last_context.menu.select_keys && RIME_STRUCT_HAS_MEMBER(*dst, dst->menu.select_keys)) {
-        dst->menu.select_keys = new char[strlen(g_last_context.menu.select_keys) + 1];
-        std::strcpy(dst->menu.select_keys, g_last_context.menu.select_keys);
+        dst->menu.select_keys = StrDup(g_last_context.menu.select_keys);
     }
     if (g_last_context.menu.num_candidates > 0 && g_last_context.menu.candidates) {
         dst->menu.candidates = new RimeCandidate[g_last_context.menu.num_candidates];
         for (int i = 0; i < g_last_context.menu.num_candidates; ++i) {
-            auto* t = g_last_context.menu.candidates[i].text;
-            auto* c = g_last_context.menu.candidates[i].comment;
-            dst->menu.candidates[i].text = new char[strlen(t) + 1];
-            std::strcpy(dst->menu.candidates[i].text, t);
-            dst->menu.candidates[i].comment = new char[strlen(c) + 1];
-            std::strcpy(dst->menu.candidates[i].comment, c);
+            dst->menu.candidates[i].text = StrDup(g_last_context.menu.candidates[i].text);
+            dst->menu.candidates[i].comment = StrDup(g_last_context.menu.candidates[i].comment);
         }
     }
-    if (RIME_STRUCT_HAS_MEMBER(*dst, dst->commit_text_preview) && g_last_context.commit_text_preview) {
-        dst->commit_text_preview = new char[strlen(g_last_context.commit_text_preview) + 1];
-        std::strcpy(dst->commit_text_preview, g_last_context.commit_text_preview);
+    if (RIME_STRUCT_HAS_MEMBER(*dst, dst->commit_text_preview)) {
+        dst->commit_text_preview = StrDup(g_last_context.commit_text_preview);
     }
     return True;
 }
@@ -234,8 +222,7 @@ static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* c
             context->composition.sel_start = comp.sel_start();
             context->composition.sel_end = comp.sel_end();
             if (!comp.preedit().empty()) {
-                context->composition.preedit = new char[comp.preedit().length() + 1];
-                std::strcpy(context->composition.preedit, comp.preedit().c_str());
+                context->composition.preedit = StrDup(comp.preedit().c_str());
             }
         }
         
@@ -248,8 +235,7 @@ static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* c
             context->menu.num_candidates = menu.num_candidates();
             
             if (!menu.select_keys().empty() && RIME_STRUCT_HAS_MEMBER(*context, context->menu.select_keys)) {
-                context->menu.select_keys = new char[menu.select_keys().length() + 1];
-                std::strcpy(context->menu.select_keys, menu.select_keys().c_str());
+                context->menu.select_keys = StrDup(menu.select_keys().c_str());
             }
             
             if (menu.num_candidates() > 0) {
@@ -259,17 +245,14 @@ static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* c
                     auto text = cand.text().empty() ? "" : cand.text().c_str();
                     auto comment = cand.comment().empty() ? "" : cand.comment().c_str();
                     
-                    context->menu.candidates[i].text = new char[strlen(text) + 1];
-                    std::strcpy(context->menu.candidates[i].text, text);
-                    context->menu.candidates[i].comment = new char[strlen(comment) + 1];
-                    std::strcpy(context->menu.candidates[i].comment, comment);
+                    context->menu.candidates[i].text = StrDup(text);
+                    context->menu.candidates[i].comment = StrDup(comment);
                 }
             }
         }
         
         if (!proto.commit_text_preview().empty() && RIME_STRUCT_HAS_MEMBER(*context, context->commit_text_preview)) {
-            context->commit_text_preview = new char[proto.commit_text_preview().length() + 1];
-            std::strcpy(context->commit_text_preview, proto.commit_text_preview().c_str());
+            context->commit_text_preview = StrDup(proto.commit_text_preview().c_str());
         }
 
         // Override select_keys based on v_mode_preedit_regex config
@@ -312,14 +295,8 @@ static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* sta
     if (g_last_was_keyup_skip) {
         RIME_STRUCT_CLEAR(*status);
         status->is_composing = g_last_is_composing;
-        
-        char* proxy_id = new char[5];
-        std::strcpy(proxy_id, "grpc");
-        status->schema_id = proxy_id;
-
-        char* proxy_name = new char[11];
-        std::strcpy(proxy_name, "gRPC Proxy");
-        status->schema_name = proxy_name;
+        status->schema_id = StrDup("grpc");
+        status->schema_name = StrDup("gRPC Proxy");
         
         return True;
     }
@@ -330,14 +307,8 @@ static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* sta
     if (client->GetContext(session_id, &proto)) {
         RIME_STRUCT_CLEAR(*status);
         status->is_composing = proto.has_composition();
-        
-        char* proxy_id = new char[5];
-        std::strcpy(proxy_id, "grpc");
-        status->schema_id = proxy_id;
-
-        char* proxy_name = new char[11];
-        std::strcpy(proxy_name, "gRPC Proxy");
-        status->schema_name = proxy_name;
+        status->schema_id = StrDup("grpc");
+        status->schema_name = StrDup("gRPC Proxy");
         
         g_last_is_composing = status->is_composing;
         return True;
@@ -366,8 +337,7 @@ static Bool MyGetCommit(RimeSessionId session_id, RIME_FLAVORED(RimeCommit)* com
     std::string text;
     if (client->GetCommit(session_id, &text) && !text.empty()) {
         RIME_STRUCT_CLEAR(*commit);
-        commit->text = new char[text.length() + 1];
-        std::strcpy(commit->text, text.c_str());
+        commit->text = StrDup(text.c_str());
         return True;
     }
     return False;
