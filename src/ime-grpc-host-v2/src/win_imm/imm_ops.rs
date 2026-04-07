@@ -146,17 +146,46 @@ pub fn get_candidate_list(himc: HIMC) -> Option<crate::proto::rime_service_v2::M
         }
 
         let cand_list = &*p_cand_list;
+        let count = cand_list.dwCount as usize;
+        if count == 0 {
+            return None;
+        }
+
         let mut candidates = Vec::new();
-        
-        // Ensure within bounds, dwOffset acts as the starting element of an array
-        let offsets_ptr = cand_list.dwOffset.as_ptr();
-        
-        for i in 0..cand_list.dwCount {
-            let offset = *offsets_ptr.add(i as usize);
-            let string_ptr = buffer.as_ptr().add(offset as usize) as *const u16;
-            
+
+        // The dwOffset array starts right after the fixed header fields.
+        // Some IMEs (e.g. Sogou on Wine) write zeros at the standard dwOffset
+        // positions and place the real offsets further into the buffer.
+        // Scan forward from dwOffset[0] to find the first non-zero value that
+        // looks like a valid string offset into the buffer.
+        let max_offset_slots = (size as usize - 24) / 4; // max u32 slots from dwOffset onward
+        let all_offsets = std::slice::from_raw_parts(cand_list.dwOffset.as_ptr(), max_offset_slots);
+
+        let mut base_idx = 0usize;
+        if all_offsets.first().copied().unwrap_or(0) == 0 {
+            // dwOffset[0] is zero — scan for the real offset array
+            for (idx, &val) in all_offsets.iter().enumerate() {
+                if val > 0 && val < size as u32 {
+                    base_idx = idx;
+                    break;
+                }
+            }
+        }
+
+        for i in 0..count {
+            let slot = base_idx + i;
+            if slot >= max_offset_slots {
+                break;
+            }
+            let offset = all_offsets[slot] as usize;
+            if offset == 0 || offset >= size as usize {
+                continue;
+            }
+            let string_ptr = buffer.as_ptr().add(offset) as *const u16;
+            let max_chars = (size as usize - offset) / 2;
+
             let mut len = 0;
-            while *string_ptr.add(len) != 0 {
+            while len < max_chars && *string_ptr.add(len) != 0 {
                 len += 1;
             }
             
