@@ -1,12 +1,12 @@
 use windows::Win32::Foundation::{BOOL, HMODULE};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
-use windows::Win32::UI::Input::Ime::{HIMC, ImmGetCompositionStringW, ImmGetCandidateListW, GCS_COMPSTR, GCS_COMPATTR, GCS_RESULTSTR, GCS_CURSORPOS, CANDIDATELIST};
+use windows::Win32::UI::Input::Ime::{HIMC, ImmGetCompositionStringW, ImmGetCandidateListW, GCS_COMPSTR, GCS_COMPATTR, GCS_RESULTSTR, GCS_CURSORPOS, CANDIDATELIST, TRANSMSGLIST};
 use windows::core::{s, PCWSTR};
 
 pub type PImeInquire = unsafe extern "system" fn(lp_imeinfo: *mut windows::Win32::UI::Input::Ime::IMEINFO, lpsz_wnd_class: *mut u16, dw_system_info_flags: u32) -> BOOL;
 pub type PImeSelect = unsafe extern "system" fn(h_imc: HIMC, f_select: BOOL) -> BOOL;
 pub type PImeProcessKey = unsafe extern "system" fn(h_imc: HIMC, v_key: u32, l_key_data: u32, lpb_key_state: *const u8) -> BOOL;
-pub type PImeToAsciiEx = unsafe extern "system" fn(u_vkey: u32, u_scan_code: u32, lpb_key_state: *const u8, lpdw_trans_key: *mut u32, fu_state: u32, h_imc: HIMC) -> u32;
+pub type PImeToAsciiEx = unsafe extern "system" fn(u_vkey: u32, u_scan_code: u32, lpb_key_state: *const u8, lp_trans_msg_list: *mut TRANSMSGLIST, fu_state: u32, h_imc: HIMC) -> u32;
 
 #[derive(Clone, Copy)]
 pub struct ImeFunctions {
@@ -34,7 +34,7 @@ pub fn load_ime_dll(path: PCWSTR) -> Result<ImeFunctions, windows::core::Error> 
             inquire: std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "system" fn(*mut windows::Win32::UI::Input::Ime::IMEINFO, *mut u16, u32) -> windows::Win32::Foundation::BOOL>(inquire_ptr),
             select: std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "system" fn(windows::Win32::UI::Input::Ime::HIMC, windows::Win32::Foundation::BOOL) -> windows::Win32::Foundation::BOOL>(select_ptr),
             process_key: std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "system" fn(windows::Win32::UI::Input::Ime::HIMC, u32, u32, *const u8) -> windows::Win32::Foundation::BOOL>(process_key_ptr),
-            to_ascii_ex: std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "system" fn(u32, u32, *const u8, *mut u32, u32, windows::Win32::UI::Input::Ime::HIMC) -> u32>(to_ascii_ex_ptr),
+            to_ascii_ex: std::mem::transmute::<unsafe extern "system" fn() -> isize, unsafe extern "system" fn(u32, u32, *const u8, *mut windows::Win32::UI::Input::Ime::TRANSMSGLIST, u32, windows::Win32::UI::Input::Ime::HIMC) -> u32>(to_ascii_ex_ptr),
         })
     }
 }
@@ -158,7 +158,7 @@ pub fn get_candidate_list(himc: HIMC) -> Option<crate::proto::rime_service_v2::M
         // positions and place the real offsets further into the buffer.
         // Scan forward from dwOffset[0] to find the first non-zero value that
         // looks like a valid string offset into the buffer.
-        let max_offset_slots = (size as usize - 24) / 4; // max u32 slots from dwOffset onward
+        let max_offset_slots = (size as usize - std::mem::offset_of!(CANDIDATELIST, dwOffset)) / 4;
         let all_offsets = std::slice::from_raw_parts(cand_list.dwOffset.as_ptr(), max_offset_slots);
 
         let mut base_idx = 0usize;

@@ -14,8 +14,8 @@ struct Args {
     #[arg(long, env = "GRPC_BIND_ADDR", default_value = "127.0.0.1:50051")]
     bind: String,
 
-    /// Path to the IME DLL (e.g. C:\windows\system32\QQPinyin.ime or sys/SogouPY.ime)
-    #[arg(long, env = "GRPC_IME_PATH", default_value = "C:\\windows\\system32\\QQPinyin.ime")]
+    /// Path to the IME DLL (e.g. C:\Windows\system32\SogouPY.ime or C:\Windows\system32\QQPinyin.ime)
+    #[arg(long, env = "GRPC_IME_PATH", default_value = "C:\\Windows\\system32\\SogouPY.ime")]
     ime_path: String,
 
     /// Whether to show the hidden message window for debugging
