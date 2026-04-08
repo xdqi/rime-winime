@@ -3,10 +3,6 @@ use ime_grpc_host_v2::proto;
 use ime_grpc_host_v2::server;
 use clap::Parser;
 
-// Uncomment when developing win_imm
-#[cfg(windows)]
-use ime_grpc_host_v2::win_imm;
-
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -37,10 +33,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use proto::rime_service_v2::rime_service_server::RimeServiceServer;
     use server::RimeServerImpl;
     #[cfg(not(windows))]
-    let backend = Box::new(backend::native::NativeRimeBackend::new());
+    let backend = Box::new(ime_grpc_host_v2::backend::native::NativeRimeBackend::new());
 
     #[cfg(windows)]
-    let backend = Box::new(win_imm::ImmRimeAdapter::new(&args.ime_path, args.show_window));
+    let backend = Box::new(ime_grpc_host_v2::win_imm::ImmRimeAdapter::new(&args.ime_path, args.show_window));
 
     let server = RimeServerImpl::new(backend);
 
