@@ -640,6 +640,12 @@ static void rime_grpc_proxy_v2_initialize() {
   Registry& r = Registry::instance();
   r.Register("grpc_key_event_processor", new Component<GrpcKeyEventProcessor>);
 
+  // On re-initialization (e.g. after Deploy), clear stale session state.
+  // gRPC clients are kept alive (the remote backend didn't restart), but
+  // local rime sessions have been destroyed.
+  g_sessions.clear();
+  g_grpc_schemas.clear();
+
   // Scan all schema files for grpc_proxy/backend_address.
   // This builds the g_grpc_schemas map so we know which schemas are gRPC-based.
   RimeApi* api = const_cast<RimeApi*>(rime_get_api());
@@ -715,13 +721,21 @@ static void rime_grpc_proxy_v2_initialize() {
       // Hook only the API functions we need.
       // Session management (create/destroy/find) is NOT hooked — rime
       // manages local sessions so that switcher, ascii_composer, etc. work.
-      original_process_key = api->process_key;
-      original_simulate_key_sequence = api->simulate_key_sequence;
-      original_get_context = api->get_context;
-      original_get_status = api->get_status;
-      original_get_commit = api->get_commit;
-      original_select_candidate = api->select_candidate;
-      original_select_candidate_on_current_page = api->select_candidate_on_current_page;
+      //
+      // IMPORTANT: only save the originals on the FIRST call.
+      // rime_api->initialize() may be called multiple times (e.g. after
+      // Deploy), re-triggering module init.  If we save api->get_status
+      // when it's already MyGetStatus, the "original" becomes ourselves
+      // and we get infinite recursion → stack overflow.
+      if (!original_process_key) {
+          original_process_key = api->process_key;
+          original_simulate_key_sequence = api->simulate_key_sequence;
+          original_get_context = api->get_context;
+          original_get_status = api->get_status;
+          original_get_commit = api->get_commit;
+          original_select_candidate = api->select_candidate;
+          original_select_candidate_on_current_page = api->select_candidate_on_current_page;
+      }
 
       api->process_key = MyProcessKey;
       api->simulate_key_sequence = MySimulateKeySequence;
