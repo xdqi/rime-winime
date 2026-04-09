@@ -33,10 +33,21 @@ static Bool (*original_select_candidate_on_current_page)(RimeSessionId, size_t);
 // --------------------------------------------------------------------------
 // We read each grpc_proxy-based schema's config to learn its backend_address.
 // This lets us map schema_id -> address -> GrpcImeClientV2 at runtime.
+// Mirrors rime's AsciiModeSwitchStyle for the gRPC proxy's own handling.
+enum GrpcAsciiSwitchStyle {
+    kGrpcSwitchNoop = 0,        // do nothing
+    kGrpcSwitchInlineAscii,     // keep backend composition, switch inline
+    kGrpcSwitchCommitText,      // Space -> commit first candidate
+    kGrpcSwitchCommitCode,      // Return -> commit raw preedit
+    kGrpcSwitchClear,           // Escape -> discard composition
+};
+
 struct GrpcSchemaInfo {
     std::string backend_address;
     int timeout_ms;
     std::string v_mode_preedit_regex;  // optional, applied on first use
+    // keycode -> switch style, read from ascii_composer/switch_key config
+    std::unordered_map<int, GrpcAsciiSwitchStyle> switch_key_bindings;
 };
 static std::unordered_map<std::string, GrpcSchemaInfo> g_grpc_schemas;
 
@@ -56,6 +67,14 @@ struct SessionState {
     RIME_FLAVORED(RimeContext) last_context;
     bool has_last_context = false;
     Bool last_is_composing = False;
+
+    // Track ascii_mode so we can detect toggles even when ascii_composer
+    // returns kNoop (which it does for Shift release).
+    Bool last_ascii_mode = False;
+
+    // Pending commit text from gRPC backend (e.g. when ascii_mode toggles
+    // and the existing preedit needs to be committed).
+    std::string pending_commit;
 };
 static std::unordered_map<uintptr_t, SessionState> g_sessions;
 
@@ -220,6 +239,13 @@ static Bool RestoreContextSnapshot(const SessionState& ss,
     return True;
 }
 
+// Modifier-only keycodes (XK_Shift_L through XK_Hyper_R).
+// These should never be forwarded to gRPC — they are only meaningful
+// for local mode switching (ascii_composer, etc.).
+static bool IsModifierOnlyKey(int keycode) {
+    return (keycode >= 0xFFE1 && keycode <= 0xFFEE);
+}
+
 // --------------------------------------------------------------------------
 // Hooked API functions
 // --------------------------------------------------------------------------
@@ -228,39 +254,115 @@ static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
     // Always let the local rime engine process first.
     // This handles: switcher (F4, Ctrl+`), ascii_composer (Shift),
     // key_binder, and any other local processors.
+    //
+    // Snapshot ascii_mode before and after, because ascii_composer toggles
+    // the option but returns kNoop for Shift release — so we can't rely
+    // on the return value alone to detect a mode switch.
+    RimeApi* rime_api = const_cast<RimeApi*>(rime_get_api());
+    Bool ascii_before = (rime_api && rime_api->get_option)
+        ? rime_api->get_option(session_id, "ascii_mode") : False;
+
     Bool local_handled = original_process_key
         ? original_process_key(session_id, keycode, mask)
         : False;
 
+    Bool ascii_after = (rime_api && rime_api->get_option)
+        ? rime_api->get_option(session_id, "ascii_mode") : False;
+
     auto& ss = EnsureSession(session_id);
     if (!ss.is_grpc) {
+        ss.last_ascii_mode = ascii_after;
         return local_handled;  // not a gRPC schema — done
     }
 
-    // If local rime consumed the key (e.g. Shift toggle, F4 switcher),
-    // don't send to gRPC.
-    if (local_handled) {
+    // Detect ascii_mode toggle (e.g. Shift tap via ascii_composer).
+    // ascii_composer returns kNoop for Shift release even after toggling
+    // the option, so we detect the change by comparing before/after.
+    bool ascii_mode_just_toggled = (ascii_before != ascii_after);
+
+    // If local rime consumed the key, or if ascii_mode just toggled,
+    // don't forward to gRPC.
+    if (local_handled || ascii_mode_just_toggled) {
         ss.last_was_keyup_skip = false;
         ss.last_process_key_accepted = false;
+
+        // When ascii_mode toggles ON with active gRPC composition,
+        // handle according to the switch_key style configured in the schema.
+        if (ascii_after && !ascii_before && ss.last_is_composing) {
+            // Look up the switch style for the key that triggered the toggle.
+            auto schema_it = g_grpc_schemas.find(ss.schema_id);
+            GrpcAsciiSwitchStyle style = kGrpcSwitchCommitCode;  // default
+            if (schema_it != g_grpc_schemas.end()) {
+                auto bind_it = schema_it->second.switch_key_bindings.find(keycode);
+                if (bind_it != schema_it->second.switch_key_bindings.end()) {
+                    style = bind_it->second;
+                }
+            }
+
+            auto client = GrpcImeClientV2::Find(ss.backend_address);
+            if (client && client->HasSession(session_id)) {
+                switch (style) {
+                case kGrpcSwitchCommitCode:
+                    // Return -> backend commits raw preedit (input code)
+                    client->ProcessKey(session_id, 0xFF0D /* XK_Return */, 0);
+                    break;
+                case kGrpcSwitchCommitText:
+                    // Space -> backend commits first candidate
+                    client->ProcessKey(session_id, 0x20 /* XK_space */, 0);
+                    break;
+                case kGrpcSwitchClear:
+                    // Escape -> discard composition
+                    client->ProcessKey(session_id, 0xFF1B /* XK_Escape */, 0);
+                    break;
+                case kGrpcSwitchInlineAscii:
+                case kGrpcSwitchNoop:
+                default:
+                    // Keep backend state as-is.
+                    break;
+                }
+
+                // For commit styles, fetch the committed text.
+                if (style == kGrpcSwitchCommitCode ||
+                    style == kGrpcSwitchCommitText) {
+                    std::string commit_text;
+                    if (client->GetCommit(session_id, &commit_text) &&
+                        !commit_text.empty()) {
+                        ss.pending_commit = commit_text;
+                        LOG(INFO) << "[grpc_proxy] ascii_mode toggle (style="
+                                  << style << "): committed '"
+                                  << commit_text << "'";
+                    }
+                }
+                ss.last_is_composing = False;
+            }
+        }
+        ss.last_ascii_mode = ascii_after;
         return True;
     }
 
     // Skip key release events — saves an RPC round-trip.
     if (mask & kReleaseMask) {
         ss.last_was_keyup_skip = true;
+        ss.last_ascii_mode = ascii_after;
         return False;
     }
     ss.last_was_keyup_skip = false;
 
     // If local rime's ascii_mode is ON, don't forward to gRPC.
     // Let keys pass through as English characters.
-    {
-        RimeApi* api = const_cast<RimeApi*>(rime_get_api());
-        if (api && api->get_option &&
-            api->get_option(session_id, "ascii_mode")) {
-            ss.last_process_key_accepted = false;
-            return False;
-        }
+    if (ascii_after) {
+        ss.last_process_key_accepted = false;
+        ss.last_ascii_mode = ascii_after;
+        return False;
+    }
+
+    // Don't forward modifier-only keys (Shift, Ctrl, Alt, etc.) to gRPC.
+    // They are only meaningful for local processing (ascii_composer, etc.).
+    // Sending them to the backend causes unnecessary RPCs and timeouts.
+    if (IsModifierOnlyKey(keycode)) {
+        ss.last_process_key_accepted = false;
+        ss.last_ascii_mode = ascii_after;
+        return False;
     }
 
     // Forward to gRPC backend.
@@ -271,10 +373,12 @@ static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
         LOG(INFO) << "[grpc_proxy] ProcessKey(session=" << session_id
                   << ", key=" << keycode << ", mask=" << mask
                   << ") -> " << res;
+        ss.last_ascii_mode = ascii_after;
         return res ? True : False;
     }
 
     ss.last_process_key_accepted = false;
+    ss.last_ascii_mode = ascii_after;
     return False;
 }
 
@@ -417,6 +521,13 @@ static Bool MyGetStatus(RimeSessionId session_id,
         if (api && api->get_option) {
             status->is_ascii_mode = api->get_option(session_id, "ascii_mode");
         }
+        // In ascii mode the UI shows no Chinese composition (MyGetContext
+        // returns empty context).  Report is_composing=false to keep
+        // status and context consistent — otherwise _Respond will try
+        // to dereference a null preedit and crash.
+        if (status->is_ascii_mode) {
+            status->is_composing = False;
+        }
         status->schema_id = StrDup(ss.schema_id.c_str());
         status->schema_name = StrDup("gRPC Proxy");
         return True;
@@ -438,6 +549,10 @@ static Bool MyGetStatus(RimeSessionId session_id,
         if (api && api->get_option) {
             status->is_ascii_mode = api->get_option(session_id, "ascii_mode");
         }
+        // In ascii mode, suppress composing — see comment above.
+        if (status->is_ascii_mode) {
+            status->is_composing = False;
+        }
         status->schema_id = StrDup(ss.schema_id.c_str());
         status->schema_name = StrDup("gRPC Proxy");
         ss.last_is_composing = status->is_composing;
@@ -454,6 +569,14 @@ static Bool MyGetCommit(RimeSessionId session_id,
     if (!ss.is_grpc) {
         return original_get_commit
             ? original_get_commit(session_id, commit) : False;
+    }
+
+    // Return pending commit from ascii_mode toggle (preedit was force-committed).
+    if (!ss.pending_commit.empty()) {
+        RIME_STRUCT_CLEAR(*commit);
+        commit->text = StrDup(ss.pending_commit.c_str());
+        ss.pending_commit.clear();
+        return True;
     }
 
     // After keyup skip or unaccepted key, no new commit possible.
@@ -545,6 +668,36 @@ static void rime_grpc_proxy_v2_initialize() {
                           regex_buf[0]) {
                           info.v_mode_preedit_regex = regex_buf;
                       }
+                      // Read ascii_composer/switch_key bindings.
+                      // Maps key names to keycodes for lookup in MyProcessKey.
+                      static const struct { const char* name; int keycode; } key_names[] = {
+                          {"Shift_L",   0xFFE1}, {"Shift_R",   0xFFE2},
+                          {"Control_L", 0xFFE3}, {"Control_R", 0xFFE4},
+                          {"Caps_Lock", 0xFFE5}, {"Eisu_toggle", 0xFF30},
+                      };
+                      static const struct { const char* name; GrpcAsciiSwitchStyle style; } style_names[] = {
+                          {"inline_ascii", kGrpcSwitchInlineAscii},
+                          {"commit_text",  kGrpcSwitchCommitText},
+                          {"commit_code",  kGrpcSwitchCommitCode},
+                          {"clear",        kGrpcSwitchClear},
+                          {"noop",         kGrpcSwitchNoop},
+                      };
+                      for (const auto& kn : key_names) {
+                          char style_buf[64] = {};
+                          std::string path = std::string("ascii_composer/switch_key/") + kn.name;
+                          if (api->config_get_string(&cfg, path.c_str(),
+                                                    style_buf, sizeof(style_buf))) {
+                              for (const auto& sn : style_names) {
+                                  if (std::strcmp(style_buf, sn.name) == 0) {
+                                      info.switch_key_bindings[kn.keycode] = sn.style;
+                                      LOG(INFO) << "[grpc_proxy]   " << kn.name
+                                                << " -> " << sn.name;
+                                      break;
+                                  }
+                              }
+                          }
+                      }
+
                       g_grpc_schemas[sid] = info;
                       // NOTE: gRPC client is NOT created here — it will be
                       // lazily created in EnsureSession() when this schema
