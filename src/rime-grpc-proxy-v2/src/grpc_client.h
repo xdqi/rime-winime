@@ -14,9 +14,15 @@ namespace rime {
 
 class GrpcImeClientV2 {
 public:
-  static std::shared_ptr<GrpcImeClientV2> Instance();
-  static std::shared_ptr<GrpcImeClientV2> GetOrCreate(const std::string& target_address, int timeout_ms);
-  
+  // --- Per-address instance pool ---
+  // Returns existing client for `target_address`, or creates a new one.
+  static std::shared_ptr<GrpcImeClientV2> GetOrCreate(
+      const std::string& target_address, int timeout_ms);
+  // Look up an existing client by address.  Returns nullptr if none.
+  static std::shared_ptr<GrpcImeClientV2> Find(const std::string& target_address);
+  // Shut down ALL pooled clients and clear the pool.
+  static void ShutdownAll();
+
   GrpcImeClientV2(const std::string& target_address, int timeout_ms);
   ~GrpcImeClientV2();
 
@@ -34,11 +40,11 @@ public:
   // channel.  Must be called while gRPC background threads are still alive
   // (i.e. NOT during DllMain/DLL_PROCESS_DETACH).
   void Shutdown();
-  // Clear the global singleton so it can be re-created after a restart.
-  static void ResetInstance();
 
+  // --- Session management (keyed by local rime session_id) ---
   bool HasSession(uintptr_t session_id);
-  uintptr_t OpenSession();
+  // Open a gRPC session paired with the given local rime session_id.
+  bool OpenSession(uintptr_t session_id);
   void DestroySession(uintptr_t session_id);
   bool ProcessKey(uintptr_t session_id, int keycode, int mask);
   bool GetContext(uintptr_t session_id, service::v2::RimeContextProto* out_context);
@@ -52,8 +58,8 @@ private:
   std::unique_ptr<service::v2::RimeService::Stub> stub_;
   
   std::mutex mutex_;
+  // Maps local rime session_id -> remote gRPC session string
   std::unordered_map<uintptr_t, std::string> sessions_;
-  uintptr_t next_id_ = 1;
 
   std::string target_address_;
   int timeout_ms_ = 100;

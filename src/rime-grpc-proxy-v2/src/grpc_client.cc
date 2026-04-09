@@ -8,21 +8,44 @@ using namespace rime::service::v2;
 using grpc::ClientContext;
 using grpc::Status;
 
-static std::shared_ptr<GrpcImeClientV2>& GetClientShared() {
-    static std::shared_ptr<GrpcImeClientV2> s_client;
-    return s_client;
+// --- Per-address instance pool ---
+static std::mutex& GetPoolMutex() {
+    static std::mutex mu;
+    return mu;
+}
+static std::unordered_map<std::string, std::shared_ptr<GrpcImeClientV2>>& GetPool() {
+    static std::unordered_map<std::string, std::shared_ptr<GrpcImeClientV2>> pool;
+    return pool;
 }
 
-std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::Instance() {
-    return GetClientShared();
-}
-
-std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::GetOrCreate(const std::string& target_address, int timeout_ms) {
-    auto& g_client = GetClientShared();
-    if (!g_client) {
-        g_client = std::make_shared<GrpcImeClientV2>(target_address, timeout_ms);
+std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::GetOrCreate(
+    const std::string& target_address, int timeout_ms) {
+    std::lock_guard<std::mutex> lock(GetPoolMutex());
+    auto& pool = GetPool();
+    auto it = pool.find(target_address);
+    if (it != pool.end()) {
+        return it->second;
     }
-    return g_client;
+    auto client = std::make_shared<GrpcImeClientV2>(target_address, timeout_ms);
+    pool[target_address] = client;
+    return client;
+}
+
+std::shared_ptr<GrpcImeClientV2> GrpcImeClientV2::Find(
+    const std::string& target_address) {
+    std::lock_guard<std::mutex> lock(GetPoolMutex());
+    auto& pool = GetPool();
+    auto it = pool.find(target_address);
+    return (it != pool.end()) ? it->second : nullptr;
+}
+
+void GrpcImeClientV2::ShutdownAll() {
+    std::lock_guard<std::mutex> lock(GetPoolMutex());
+    auto& pool = GetPool();
+    for (auto& [addr, client] : pool) {
+        if (client) client->Shutdown();
+    }
+    pool.clear();
 }
 
 GrpcImeClientV2::GrpcImeClientV2(const std::string& target_address, int timeout_ms)
@@ -62,11 +85,6 @@ void GrpcImeClientV2::Shutdown() {
   stub_.reset();  // release the gRPC channel while it's still safe
 }
 
-void GrpcImeClientV2::ResetInstance() {
-  auto& g_client = GetClientShared();
-  g_client.reset();
-}
-
 GrpcImeClientV2::~GrpcImeClientV2() {
   // During DLL unload gRPC threads are already dead; any RPC here
   // would deadlock on the IOCP.  Only do safe, non-blocking cleanup.
@@ -74,7 +92,7 @@ GrpcImeClientV2::~GrpcImeClientV2() {
   stub_.reset();
 }
 
-uintptr_t GrpcImeClientV2::OpenSession() {
+bool GrpcImeClientV2::OpenSession(uintptr_t session_id) {
   ClientContext context;
   SetupClientContext(&context);
   OpenSessionRequest req;
@@ -84,11 +102,10 @@ uintptr_t GrpcImeClientV2::OpenSession() {
   Status status = stub_->OpenSession(&context, req, &resp);
   if (status.ok() && !resp.session_id().empty()) {
     std::lock_guard<std::mutex> lock(mutex_);
-    uintptr_t id = next_id_++;
-    sessions_[id] = resp.session_id();
-    return id;
+    sessions_[session_id] = resp.session_id();
+    return true;
   }
-  return 0;
+  return false;
 }
 
 void GrpcImeClientV2::DestroySession(uintptr_t session_id) {
