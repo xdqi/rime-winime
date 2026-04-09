@@ -21,6 +21,10 @@ struct Args {
     /// Auto-destroy idle sessions after this many seconds
     #[arg(long, env = "GRPC_SESSION_TIMEOUT_SEC", default_value_t = 600)]
     session_timeout_sec: u64,
+
+    /// Disable Chinese punctuation fallback mapping (useful if IME natively handles it well)
+    #[arg(long, env = "GRPC_DISABLE_PUNCT_FALLBACK", default_value_t = false)]
+    disable_punct_fallback: bool,
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -36,7 +40,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let backend = Box::new(ime_grpc_host_v2::backend::native::NativeRimeBackend::new());
 
     #[cfg(windows)]
-    let backend = Box::new(ime_grpc_host_v2::win_imm::ImmRimeAdapter::new(&args.ime_path, args.show_window));
+    let backend = Box::new(ime_grpc_host_v2::win_imm::ImmRimeAdapter::new(
+        &args.ime_path,
+        args.show_window,
+        !args.disable_punct_fallback,
+    ));
 
     let server = RimeServerImpl::new(backend);
 

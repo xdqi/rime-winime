@@ -45,18 +45,19 @@ pub struct ImmRimeAdapter {
     ime_functions: Option<ImeFunctions>,
     sessions: HashMap<usize, session::WinImmSession>,
     show_window: bool,
+    enable_punct_fallback: bool,
 }
 
 static IME_FUNCS: OnceLock<Option<ImeFunctions>> = OnceLock::new();
 
 impl Default for ImmRimeAdapter {
     fn default() -> Self {
-        Self::new("C:\\windows\\system32\\QQPinyin.ime", false)
+        Self::new("C:\\windows\\system32\\QQPinyin.ime", false, true)
     }
 }
 
 impl ImmRimeAdapter {
-    pub fn new(ime_path: &str, show_window: bool) -> Self {
+    pub fn new(ime_path: &str, show_window: bool, enable_punct_fallback: bool) -> Self {
         let ime_path_owned = ime_path.to_string();
         let ime_functions = *IME_FUNCS.get_or_init(move || {
             use windows::core::{HSTRING, PCWSTR};
@@ -86,6 +87,7 @@ impl ImmRimeAdapter {
             ime_functions,
             sessions: HashMap::new(),
             show_window,
+            enable_punct_fallback,
         }
     }
 }
@@ -259,13 +261,17 @@ impl RimeBackend for ImmRimeAdapter {
                                 // SogouPY does not populate COMPOSITIONSTRING.dwResultStr
                                 // for standalone punctuation (no prior composition).
                                 // Fall back to our Chinese punctuation mapping table.
-                                if let Some(punct) = crate::win_imm::punct_map::map_punctuation(key.keycode) {
-                                    let mut s = session.pending_commit.take().unwrap_or_default();
-                                    s.push_str(&punct);
-                                    session.pending_commit = Some(s);
-                                    tracing::info!("commit (punct fallback): '{}'", punct);
+                                if self.enable_punct_fallback {
+                                    if let Some(punct) = crate::win_imm::punct_map::map_punctuation(key.keycode) {
+                                        let mut s = session.pending_commit.take().unwrap_or_default();
+                                        s.push_str(&punct);
+                                        session.pending_commit = Some(s);
+                                        tracing::info!("commit (punct fallback): '{}'", punct);
+                                    } else {
+                                        tracing::warn!("GCS_RESULTSTR empty and no punct mapping for keycode=0x{:X}", key.keycode);
+                                    }
                                 } else {
-                                    tracing::warn!("GCS_RESULTSTR empty and no punct mapping for keycode=0x{:X}", key.keycode);
+                                    tracing::warn!("GCS_RESULTSTR empty and punct fallback disabled for keycode=0x{:X}", key.keycode);
                                 }
                             }
                         }

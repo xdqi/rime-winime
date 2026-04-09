@@ -12,7 +12,7 @@ use windows::Win32::UI::Input::Ime::{ImmNotifyIME, NI_SELECTCANDIDATESTR};
 
 #[tokio::main]
 async fn main() {
-    let mut adapter = win_imm::ImmRimeAdapter::new();
+    let mut adapter = win_imm::ImmRimeAdapter::new("C:\\Windows\\system32\\QQPinyin.ime", false, true);
     use backend::RimeBackend;
     let id = adapter.open_session().await.unwrap();
     use proto::rime_service_v2::KeyEvent;
