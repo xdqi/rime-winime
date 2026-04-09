@@ -1,0 +1,45 @@
+# Rime schema
+# encoding: utf-8
+
+schema:
+  schema_id: win32_proxy
+  name: Win32 代理输入
+  version: "0.1.0"
+  author:
+    - sogou reverse experiment
+  description: |
+    通过 win32_proxy_translator 将候选请求代理到 Wine/Win32 IME host。
+
+engine:
+  processors:
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+  segmentors:
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - win32_proxy_translator
+    - echo_translator
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+
+punctuator:
+  import_preset: default
+
+win32_proxy:
+  host: 127.0.0.1
+  port: 22345
+  codepage: 936
+  timeout_ms: 2500
+  command: TEXTU
+  tag: abc
+  max_candidates: 9
+  comment_mode: read
+  one_shot: false

@@ -1,0 +1,47 @@
+# Rime schema
+# encoding: utf-8
+
+schema:
+  schema_id: grpc_proxy
+  name: gRPC Proxy IME
+  version: "0.1.0"
+  author:
+    - ime gateway experiment
+  description: |
+    Routes key events and candidate queries to the gRPC IME host.
+
+engine:
+  processors:
+    - grpc_key_event_processor
+    - speller
+    - punctuator
+    - selector
+    - navigator
+    - express_editor
+    - grpc_commit_observer
+  segmentors:
+    - abc_segmentor
+    - punct_segmentor
+    - fallback_segmentor
+  translators:
+    - punct_translator
+    - grpc_proxy_translator
+    - echo_translator
+
+speller:
+  alphabet: zyxwvutsrqponmlkjihgfedcba
+  delimiter: " '"
+
+punctuator:
+  import_preset: default
+
+grpc_proxy:
+  host: 127.0.0.1
+  port: 50051
+  timeout_ms: 120
+  max_candidates: 9
+  tag: abc
+  comment_mode: read
+  debug_stop_mode: true
+  frontend_id: rime-grpc-proxy
+

@@ -1,0 +1,5 @@
+- 2026-04-02: 在 host 协议新增 PREEDIT 命令，并在 CAND 响应附带 comp/read 字段；候选为空时仍可观测输入法回显。
+- WINABC `nihao` 现象：TEXT 路径回显为 `nihao`，PIPE(含空格触发)回显常见 `你好o`，说明多音节转换状态可通过 preedit 精细追踪。
+- 2026-04-02: 新增逐键命令 `TRACE`/`TRACEPIPE`，每键返回 proc/comp/read/candidate 计数，便于复现真实输入法逐键请求路径。
+- 2026-04-02: `winedbg --gdb` 三调用点返回值序列对照已稳定：`ImmProcessKey` 两者均命中但返回0；WINABC 的 `ImeProcessKey/ImeToAsciiEx` 在 `TRACE nihao` 五键均返回1，Sogou 五键均返回0。说明分叉点是“调用结果不生效”而非“未调用”。
+- 2026-04-03: Force36c 会话下，Sogou 已可由 PoC 同次捕获 preedit+candidate：`TRACE nihao` 见 `comp/read=nihao`，`TRACEPIPE nihao` 后 `CAND` 出现 `count=1 items=[hao]`。

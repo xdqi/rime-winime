@@ -1,0 +1,18 @@
+- 2026-04-02 Phase0: /opt/sogou/sys/SogouPY.ime 与 /opt/sogou/syswow64/SogouPY.ime 哈希一致（md5 7022bd95ba0555b853a4a4d31d53ffb6），可先按单一二进制逆向。
+- 导出主链：ImeProcessKey(0x10085680)->sub_100862F0->sub_1009B770；ImeToAsciiEx(0x10085750)->sub_100865A0->sub_1009BC60；NotifyIME(0x10085820)->sub_100868E0->sub_1009C170。
+- ImeConfigure(0x10085330)->sub_10085BE0 中确认 SGTool.exe 与参数 --appid=config，设置入口存在。
+- 关键依赖：IMM32、COM(ole32)、NamedPipe 系列 API 明显存在，桥接阶段需重点处理兼容。
+- 动态证据：Wine 下 ime_probe.exe 成功 LoadLibrary 两个路径（sys/syswow64），并调用 ImeInquire(ret=1, UI class=SoPY_UI, fdwProperty=0x001e0002, fdwConversionCaps=0x00000488) 与 ImeEscape(4102, ret=1)。
+- 框架边界确认：flow probe（ImmCreateContext + ImeSelect/ImeProcessKey/ImeToAsciiEx/NotifyIME）返回全 0，说明仅 Wine 桌面环境不足以提供完整 Windows IME 生命周期，需自建 Win32 host 层。
+- 已实现 host skeleton：src/reverse/host/ime_host_skeleton.c（隐藏窗口+消息泵+HIMC 生命周期+TCP 命令）。Wine 运行可连通（PING/STATUS/KEY/QUIT），但 KEY 41 仍返回 process=0/ascii=0/msgs=0。
+- 2026-04-03 运行时定位：`sub_100F6080` 实际读取 t_dataPrivate+0x36c（vfunc 0x100ACD50），该位在 host 流程中始终为 0，导致 `sub_100801D0`（code=0x205）稳定返回 0。
+- 回调链证据：`0x100F2660` 命中回调序列，但常态下全部 ret=0；强制将对象 +0x36c 置 1 后，`code=0x205` 立即 ret=3，`TRACE nihao` 出现 `proc=2` 与可见 preedit（nihao）。
+- 触发缺口：自然路径中 `sub_100F6110`（唯一写 +0x36c 入口）命中计数为 0；`ImmSetOpenStatus/ImmSetConversionStatus`、`NotifyIME` 参数扫描、常见前置按键序列均未触发该入口。
+- 已落地可复现 PoC：`src/reverse/host/poc/run_force36c_poc.sh`（配套 `force36c_probe.gdb` 与 `trace_client_force36c.py`），运行后可稳定得到 `POC_PASS first_proc=2`，用于阶段性验证链路可达。
+- 2026-04-03 文档同步：README 新增“Session record addendum (2026-04-03)”并创建 `src/reverse/host/poc/SESSION_2026-04-03.md`，补齐证据链、已排除路径、PoC边界和下一步调用点。
+- 2026-04-03: `force36c_probe.gdb` 入口断点以 `*0x403513`（host 的 `handle_key_internal` 入口）更稳定；旧 `0x4033a2` 在当前构建中会出现未命中导致注入失效。
+- 2026-04-03: `WINEDEBUG=+file` 证实 Sogou 读取 app 核心 bin 但路径为 `app/10.5.0.4737/10.5.0.4737/*`；补齐该层后 `sgim_py/hz/quick/simtra` 可解析，但仍大量缺失 `sgim_core/sgim_charvalid/sgim_eng*` 与 `AppData\\LocalLow\\SogouPY` 用户态数据，候选仍为 `hao`。
+- 2026-04-03: 注册表根路径若设为 `Z:\\opt\\sogou\\app\\10.5.0.4737` 会触发运行时双版本拼接（`...\\10.5.0.4737\\10.5.0.4737\\...`）；改为 `Z:\\opt\\sogou\\app` 后路径恢复单版本并可命中 `app\\Components\\ComponentConfig.ini`。
+- 2026-04-03: Ctrl+Shift+F A/B trace 结论：KEYCHORD 已成功分发（process=2）。两组共有基线写入为 `Used`/`SogouComponentFirstLoad` 与 `statenv.ini`；toggle 组新增 `UsageStatistics.ini` 访问/重建（命中 17，control 为 0），且发生在 KEYCHORD 之后。`D20971521` 仅在 toggle 组出现 1 次但位于 KEYCHORD 之前，不应作为热键因果证据。
+- 2026-04-03: 繁简差异文本验证（`trace_client_toggle_commit_s2t.py` + `trace_client_toggle_convtable_s2t.py`）结果均为 OBS：KEYCHORD 分发正常（process=2），但 commit 路径 `PREEDIT result` 全空、`CONV` 对中英文词均 `count=0`/`err=no_source`，当前 host 会话下无法形成可比较的文本信号。
+- 2026-04-04: QQ gRPC V1 执行基线固定为 `/opt/sogou/src/memories/NWFjM2U2NzgtZTJlNS00YWVlLWIxYjQtZDFjNWEwNzVmYWIz/plan.md`；偏离时优先回到 `src/reverse/phase1-qq-grpc-v1-plan-status.md` 的未完成项。

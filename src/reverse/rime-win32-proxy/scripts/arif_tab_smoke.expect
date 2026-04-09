@@ -1,0 +1,177 @@
+#!/usr/bin/expect -f
+
+# Usage:
+#   arif_tab_smoke.expect <arify_bin> <libarify_so> <libarif_rime_so> <proxy_so> <user_data_dir> <shared_data_dir> <arify_log> [rime_log_dir] [input_text] [inputs_csv]
+
+set timeout 20
+
+if {$argc < 7} {
+    puts stderr "usage: $argv0 <arify_bin> <libarify_so> <libarif_rime_so> <proxy_so> <user_data_dir> <shared_data_dir> <arify_log> \[rime_log_dir\] \[input_text\] \[inputs_csv\]"
+    exit 2
+}
+
+set arify_bin [lindex $argv 0]
+set libarify_so [lindex $argv 1]
+set libarif_rime_so [lindex $argv 2]
+set proxy_so [lindex $argv 3]
+set user_data_dir [lindex $argv 4]
+set shared_data_dir [lindex $argv 5]
+set arify_log [lindex $argv 6]
+if {$argc >= 8} {
+    set rime_log_dir [lindex $argv 7]
+} else {
+    set rime_log_dir "${user_data_dir}/log"
+}
+
+if {$argc >= 9} {
+    set input_text [lindex $argv 8]
+} else {
+    set input_text "ni"
+}
+
+if {$argc >= 10} {
+    set inputs_csv [lindex $argv 9]
+} else {
+    set inputs_csv ""
+}
+
+set cmd [list env \
+    LD_PRELOAD=$proxy_so \
+    ARIFY_ENGINES=${libarif_rime_so}:arif_rime_engine \
+    ARIFY_FRONTEND=readline \
+    ARIFY_PAGE_SIZE=9 \
+    ARIFY_LOG_FILE=$arify_log \
+    ARIFY_RL_NO_AUTO_UNSETENV=1 \
+    ARIF_RIME_MODULES=default,win32_proxy \
+    ARIF_RIME_USER_DATA_DIR=$user_data_dir \
+    ARIF_RIME_SHARED_DATA_DIR=$shared_data_dir \
+    ARIF_RIME_LOG_DIR=$rime_log_dir \
+    ARIF_RIME_LOG_LEVEL=INFO \
+    $arify_bin -p $libarify_so -f readline -- bash --noprofile --norc]
+
+puts "\[expect\] spawn: $cmd"
+puts "\[expect\] input_text=$input_text"
+puts "\[expect\] inputs_csv=$inputs_csv"
+spawn -noecho {*}$cmd
+set sh_spawn $spawn_id
+
+# Wait for shell prompt.
+expect {
+    -re {[$#] $} {}
+    timeout {
+        puts stderr "\[expect\] shell prompt timeout"
+        catch {wait -i $sh_spawn}
+        exit 1
+    }
+}
+
+# Bind a toggle key and enable arify frontend in readline.
+send -- "bind '\"\\C-x\\C-a\": arify-toggle'\r"
+expect {
+    -re {[$#] $} {}
+    timeout {
+        puts stderr "\[expect\] bind command timeout"
+        exit 1
+    }
+}
+
+send -- "\030\001"
+expect {
+    -re {\[arify\] enabled} { exp_continue }
+    -re {[$#] $} {}
+    timeout {
+        puts stderr "\[expect\] arify enable timeout"
+        exit 1
+    }
+}
+
+proc trigger_tab {} {
+    global timeout
+    send -- "\t"
+    after 300
+    send -- "\t"
+
+    set saved_timeout $timeout
+    set timeout 0
+    set deadline_ms [expr {[clock milliseconds] + 2500}]
+
+    while {[clock milliseconds] < $deadline_ms} {
+        expect {
+            -re {[^
+]+} {}
+            eof {
+                break
+            }
+            timeout {
+                after 50
+            }
+        }
+    }
+
+    set timeout $saved_timeout
+}
+
+set saw_output 0
+
+if {$inputs_csv ne ""} {
+    set parts [split $inputs_csv ","]
+    set steps [list]
+    foreach part $parts {
+        set trimmed [string trim $part]
+        if {$trimmed ne ""} {
+            lappend steps $trimmed
+        }
+    }
+    if {[llength $steps] == 0} {
+        puts stderr "\[expect\] inputs_csv provided but no valid step found"
+        exit 2
+    }
+    puts "\[expect\] sequence_steps=[llength $steps]"
+    set prev_len 0
+    set idx 0
+    foreach step $steps {
+        puts "\[expect\] step_index=[expr {$idx + 1}] step_input=$step"
+        if {$idx > 0} {
+            for {set i 0} {$i < $prev_len} {incr i} {
+                send -- "\177"
+            }
+        }
+        send -- "$step"
+        trigger_tab
+        set saw_output 1
+        after 300
+        set prev_len [string length $step]
+        incr idx
+    }
+} else {
+    send -- "${input_text}"
+    trigger_tab
+    set saw_output 1
+}
+
+# Clear current line and exit shell.
+set exited 0
+send -- "\025"
+send -- "\004"
+
+expect {
+    eof {
+        set exited 1
+    }
+    timeout {
+        catch {close -i $sh_spawn}
+        catch {wait -i $sh_spawn}
+        set exited 1
+    }
+}
+
+if {!$exited} {
+    puts stderr "\[expect\] shell exit timeout"
+    exit 1
+}
+
+if {!$saw_output} {
+    puts stderr "\[expect\] warning: no visible output after TAB"
+}
+
+exit 0

@@ -1,0 +1,1 @@
+- 2026-04-02: WINABC 在 Wine 下的候选文本可能出现“伪 Unicode”形式（如 U+E3C4，对应 GBK 字节 C4 E3=“你”）；可通过“WCHAR 拆字节后按 codepage 解码”恢复可读候选。

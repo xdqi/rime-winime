@@ -11,6 +11,11 @@ use crate::backend::RimeBackend;
 use crate::win_imm::imm_ops::ImeFunctions;
 use std::collections::HashMap;
 use std::sync::OnceLock;
+use windows::Win32::UI::Input::Ime::GCS_RESULTSTR;
+use windows::Win32::UI::Input::KeyboardAndMouse::*;
+use windows::Win32::UI::WindowsAndMessaging::{
+    PeekMessageW, MSG, PM_REMOVE, WM_CHAR, WM_IME_CHAR, WM_IME_COMPOSITION,
+};
 
 /// Known paired punctuation: maps opener to closer.
 /// When the IME commits "opener+closer" as a single result string,
@@ -96,7 +101,7 @@ impl ImmRimeAdapter {
     pub async fn process_vk(
         &mut self,
         session_id: usize,
-        vk: u32,
+        vk: VIRTUAL_KEY,
         modifiers: u32,
         is_keyup: bool,
     ) -> bool {
@@ -110,38 +115,37 @@ impl ImmRimeAdapter {
                 let is_alt = (modifiers & 4) != 0;
 
                 if is_shift {
-                    key_state[0x10] = 0x80; // VK_SHIFT
-                    key_state[0xA0] = 0x80; // VK_LSHIFT
+                    key_state[VK_SHIFT.0 as usize] = 0x80;
+                    key_state[VK_LSHIFT.0 as usize] = 0x80;
                 }
                 if is_ctrl {
-                    key_state[0x11] = 0x80; // VK_CONTROL
-                    key_state[0xA2] = 0x80; // VK_LCONTROL
+                    key_state[VK_CONTROL.0 as usize] = 0x80;
+                    key_state[VK_LCONTROL.0 as usize] = 0x80;
                 }
                 if is_alt {
-                    key_state[0x12] = 0x80; // VK_MENU (Alt)
-                    key_state[0xA4] = 0x80; // VK_LMENU
+                    key_state[VK_MENU.0 as usize] = 0x80;
+                    key_state[VK_LMENU.0 as usize] = 0x80;
                 }
 
-                let l_key_data = crate::win_imm::vk_map::make_l_key_data(vk, is_keyup, is_alt);
+                let vk_u32 = vk.0 as u32;
+                let l_key_data = crate::win_imm::vk_map::make_l_key_data(vk_u32, is_keyup, is_alt);
 
-                tracing::debug!("process_vk: vk=0x{:X} modifiers={}", vk, modifiers);
+                tracing::debug!("process_vk: vk=0x{:X} modifiers={}", vk_u32, modifiers);
 
                 let mut char_buf = [0u16; 2];
                 let scan_code = (l_key_data >> 16) & 0xFF;
-                let char_len = unsafe {
-                    windows::Win32::UI::Input::KeyboardAndMouse::ToUnicode(
-                        vk,
-                        scan_code,
-                        Some(&key_state),
-                        &mut char_buf,
-                        0,
-                    )
+                let char_len =
+                    unsafe { ToUnicode(vk_u32, scan_code, Some(&key_state), &mut char_buf, 0) };
+                let ascii_code = if char_len > 0 {
+                    char_buf[0] as u32
+                } else {
+                    vk_u32
                 };
-                let ascii_code = if char_len > 0 { char_buf[0] as u32 } else { vk };
 
                 let is_consumed = unsafe {
-                    windows::Win32::UI::Input::KeyboardAndMouse::SetKeyboardState(&key_state).ok();
-                    let res = (ime.process_key)(session.himc, vk, l_key_data, key_state.as_ptr());
+                    SetKeyboardState(&key_state).ok();
+                    let res =
+                        (ime.process_key)(session.himc, vk_u32, l_key_data, key_state.as_ptr());
                     res
                 };
 
@@ -163,7 +167,7 @@ impl ImmRimeAdapter {
 
                     let msg_count = unsafe {
                         (ime.to_ascii_ex)(
-                            vk,
+                            vk_u32,
                             scan_code,
                             key_state.as_ptr(),
                             list_ptr,
@@ -191,13 +195,10 @@ impl ImmRimeAdapter {
                         if message == 0 {
                             continue;
                         }
-                        if message == 0x010F /* WM_IME_COMPOSITION */
-                            && (lp & 0x0800 /* GCS_RESULTSTR */) != 0
-                        {
+                        if message == WM_IME_COMPOSITION && (lp & GCS_RESULTSTR.0 as u32) != 0 {
                             has_commit_msg = true;
                         }
-                        // Collect characters from WM_IME_CHAR (0x286) or WM_CHAR (0x102)
-                        if message == 0x0286 || message == 0x0102 {
+                        if message == WM_IME_CHAR || message == WM_CHAR {
                             if let Some(ch) = std::char::from_u32(wp & 0xFFFF) {
                                 char_commits.push(ch);
                             }
@@ -235,12 +236,9 @@ impl ImmRimeAdapter {
 
                     // Phase 3: pump WM_CHAR from message queue
                     unsafe {
-                        use windows::Win32::UI::WindowsAndMessaging::{
-                            PeekMessageW, MSG, PM_REMOVE,
-                        };
                         let mut msg_buf: MSG = std::mem::zeroed();
                         let mut wm_chars = String::new();
-                        while PeekMessageW(&mut msg_buf, session.hwnd, 0x0102, 0x0102, PM_REMOVE)
+                        while PeekMessageW(&mut msg_buf, session.hwnd, WM_CHAR, WM_CHAR, PM_REMOVE)
                             .as_bool()
                         {
                             if let Some(ch) = std::char::from_u32(msg_buf.wParam.0 as u32) {
@@ -357,7 +355,8 @@ impl RimeBackend for ImmRimeAdapter {
             win_mod |= 4;
         }
 
-        self.process_vk(session_id, vk, win_mod, is_keyup).await
+        self.process_vk(session_id, VIRTUAL_KEY(vk as u16), win_mod, is_keyup)
+            .await
     }
 
     async fn get_context(&mut self, session_id: usize) -> RimeContextProto {

@@ -1,0 +1,3 @@
+- Root cause for r->9/9m/5 artifacts: proxy sends key_event.virtual_key as low byte of source keycode; printable ASCII must be remapped with VkKeyScanExW before IMM/IME calls.
+- After adding VkKeyScanExW mapping + modifier key messages + WM_CHAR emission, strict QQPinyin path returns real IMM candidates (immW list) under Wine.
+- Strict Sogou path still fails at query stage with IMM_REAL_REQUIRED (no candidate list), so QQ and Sogou behavior diverges in the same environment.

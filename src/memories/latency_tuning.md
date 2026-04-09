@@ -1,0 +1,4 @@
+## Latency / Architecture Optimizations
+- **Problem**: The Tokio reactor was being starved because `RimeBackend` trait methods were synchronous in `server.rs`. `process_key`, `get_status`, and `get_context` were blocking the async worker threads on `std::sync::mpsc::Receiver::recv().unwrap()`.
+- **Hacky Solution (Reverted)**: Aggregated `get_context` and `get_commit` directly into the `ProcessKeyResponse` payload, adding caching to C++. This ruined the 1:1 replica design of the RIME interface.
+- **Final Solution**: Reverted all proto/C++ bloat hacks. Refactored `RimeBackend` to use `#[tonic::async_trait]` and `async fn`. Modified `channel_adapter.rs` to use `tokio::sync::oneshot::Sender`. The `std::thread` now replies through the oneshot, and `process_key` uses `.await` on the receiver, perfectly yielding the Tokio worker thread context back to the runtime while Win32 message pumping occurs. Latency collapsed to ~10-20ms per keystroke over gRPC.

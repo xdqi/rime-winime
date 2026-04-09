@@ -1,0 +1,7 @@
+- 2026-04-02: 为减少每次 wine 命令触发配置更新/提示，新增统一包装脚本 `/opt/sogou/winabc/wine_run.sh`（固定 WINEPREFIX、WINEDLLOVERRIDES、一次性 init）。
+- 关键坑：当前环境是 WoW64 wine，继承 `WINEARCH=win32` 会报 `not supported in wow64 mode`；需要在包装层清理该变量。
+- 在无显示服务器时（XDG_RUNTIME_DIR/DISPLAY 不可用）`ime_host_skeleton.exe` 会 `CreateWindowExA failed: 1400`，这属于图形驱动环境问题，不是 wrapper 本身问题。
+- 2026-04-02: WINABC 负载需要同时部署到 `drive_c/windows/system32` 和 `drive_c/windows/syswow64`；在 Xvfb 下用 `C:\windows\syswow64\WINABC.IME` 可成功启动 host，且 `KEY 41` 出现 `process=1`。
+- 2026-04-02: 参考 `nt5src` 的 `core/ntuser/imm/input.c`，标准路径是 `ImmProcessKey/ImmTranslateMessage -> ImeToAsciiEx -> ImmPostMessages`；仅直调导出容易拿不到候选链路。
+- 2026-04-02: conime 风格连续输入路径有效：避免在每次查询前重复 `activate_ime_path`，使用单次激活 + 连续按键（`PIPE ni`）可使 WINABC 出现非零候选列表（lists=22, count 合计 454）。
+- 2026-04-04: 当前执行基线以《Plan: Wine QQPinyin gRPC V1 (Debug-first)》为准，后续进展按 Phase A->E 与阻塞关系对齐汇报，避免只在局部稳定性/埋点上偏航。

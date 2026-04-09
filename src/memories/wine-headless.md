@@ -1,0 +1,13 @@
+- 在当前机器上安装器无 DISPLAY 会报 Invalid window handle（Inno Setup），需用 xvfb-run -a 执行 wine 安装。
+- 已验证可创建纯32位前缀：WINEARCH=win32 + WINEPREFIX=/opt/sogou/.wine32，#arch=win32。
+- 该前缀已设置 Windows 7：HKCU\\Software\\Wine\\Version=win7，cmd /c ver 返回 6.1.7601。
+- Sogou 安装包 sogou_pinyin_105b_xp.exe 可在 .wine32 静默安装（Inno 参数 /SP- /VERYSILENT /SUPPRESSMSGBOXES /NORESTART）。
+- 已在 .wine32 上跑通 src/reverse/host/poc/run_force36c_poc.sh（WINEPREFIX=/opt/sogou/.wine32，POC_DLL_PATH=C:\\windows\\system32\\SogouPY.ime），结果 POC_PASS，nihao 候选包含“你好”。
+- run_force36c_poc.sh 已加入等待超时回收（POC_WAIT_TIMEOUT_SEC）与 X broken 文案过滤（POC_FILTER_X_BROKEN），用于降低无头收尾阶段“看似卡住”的概率。
+- run_host_smoke.exp 已默认走 C:\\windows\\system32\\SogouPY.ime，并支持 --wait-timeout 与 --show-host-log；失败路径会强制回收子进程，避免无限 wait。
+- wetype_installer_official_p_48.exe 是 PE32+ x64 安装器；在纯32位前缀 /opt/sogou/.win32 中会报 Bad EXE format，无法安装。
+- QQPinyin_Setup_6.6.6304.400.exe 可用 7z 解包（NSIS-3 Unicode）；外层/内层静默安装易挂，手动部署 $_35_ 到 .wine32 后，QQPinyin.ime 在 probe 中可成功加载并返回 ImeInquire/ImeProcessKey。
+- 新增脚本：src/reverse/host/poc/install_qqpinyin_wine32.sh（专门安装 QQ 拼音到 .wine32）与 src/reverse/host/poc/run_qqpinyin_modes.sh + trace_client_qqpinyin_modes.py（nihao 通过后继续 V/U 模式测试）。最近一次运行结果：NIHAO_PASS、VMODE_PASS、UMODE_PASS。
+- install_qqpinyin_wine32.sh 现默认 QQPY_TRY_INNER_SETUP=0（不依赖 /S），走解包+手动部署；如需实验内层 setup 才设置 QQPY_TRY_INNER_SETUP=1。
+- 2026-04-04: rime-win32-proxy 的 tab smoke 脚本改为每次运行使用独立 `ARIF_RIME_LOG_DIR`（`.cache/qqpy_arif_tab_rime_<ts>`），`rime_log_scan` 仅扫描本次目录，避免历史 `connect failed/no greeting` 误报。
+- 2026-04-04: 新增 `scripts/run_arif_tab_smoke_qqpinyin_3inputs.sh`，默认三轮输入 `ni,hao,zhong`；并支持 `QQPY_INPUTS_CSV` 覆盖三轮输入。`run_arif_tab_smoke_qqpinyin.sh` / `arif_tab_smoke.expect` 也新增 `QQPY_INPUT_TEXT` 单轮输入可配。

@@ -1,0 +1,241 @@
+#!/usr/bin/expect -f
+
+# One-shot automation for ime_host_skeleton:
+# 1) start host under Wine
+# 2) connect via TCP
+# 3) run STATUS / ACTIVATE / CP / PIPEU / PREEDIT / CAND / PAGEDOWN / PICK / STATUS / QUIT
+# 4) wait for clean host exit (bounded; force-stop on timeout)
+
+set timeout 30
+set port 22345
+set dll "C:\\windows\\system32\\QQPinyin.ime"
+set show_window 0
+set show_host_log 0
+set port_explicit 0
+set host_wait_timeout_sec 20
+set connect_retry_count 200
+set connect_retry_interval_ms 100
+set wine_runner "/opt/sogou/winabc/wine_run.sh"
+
+proc _probe_accept {sock addr port} {
+    catch {close $sock}
+}
+
+proc is_port_free {port} {
+    if {[catch {set ls [socket -server _probe_accept -myaddr 127.0.0.1 $port]} err]} {
+        return 0
+    }
+    catch {close $ls}
+    return 1
+}
+
+proc process_alive {pid} {
+    if {$pid <= 0} {
+        return 0
+    }
+    if {[catch {exec kill -0 $pid}]} {
+        return 0
+    }
+    return 1
+}
+
+proc terminate_spawn {spawn_id wait_timeout_sec} {
+    if {$spawn_id eq ""} {
+        return
+    }
+
+    set pid [exp_pid -i $spawn_id]
+    if {$pid <= 0} {
+        catch {wait -i $spawn_id}
+        return
+    }
+
+    if {[process_alive $pid]} {
+        catch {exec kill -TERM $pid}
+    }
+
+    set waited_ms 0
+    set wait_limit_ms [expr {$wait_timeout_sec * 1000}]
+    while {[process_alive $pid] && $waited_ms < $wait_limit_ms} {
+        after 100
+        set waited_ms [expr {$waited_ms + 100}]
+    }
+
+    if {[process_alive $pid]} {
+        catch {exec kill -KILL $pid}
+        after 200
+    }
+
+    catch {wait -i $spawn_id}
+}
+
+for {set i 0} {$i < [llength $argv]} {incr i} {
+    set arg [lindex $argv $i]
+    switch -- $arg {
+        --port {
+            incr i
+            if {$i >= [llength $argv]} {
+                puts stderr "\[expect\] missing value for --port"
+                exit 2
+            }
+            set port [lindex $argv $i]
+            set port_explicit 1
+        }
+        --dll {
+            incr i
+            if {$i >= [llength $argv]} {
+                puts stderr "\[expect\] missing value for --dll"
+                exit 2
+            }
+            set dll [lindex $argv $i]
+        }
+        --show-window {
+            set show_window 1
+        }
+        --show-host-log {
+            set show_host_log 1
+        }
+        --wait-timeout {
+            incr i
+            if {$i >= [llength $argv]} {
+                puts stderr "\[expect\] missing value for --wait-timeout"
+                exit 2
+            }
+            set host_wait_timeout_sec [lindex $argv $i]
+            if {![string is integer -strict $host_wait_timeout_sec] || $host_wait_timeout_sec <= 0} {
+                puts stderr "\[expect\] invalid --wait-timeout: $host_wait_timeout_sec"
+                exit 2
+            }
+        }
+        default {
+            puts stderr "\[expect\] unknown arg: $arg"
+            exit 2
+        }
+    }
+}
+
+if {$port_explicit} {
+    if {![is_port_free $port]} {
+        puts stderr "\[expect\] port $port is busy"
+        exit 2
+    }
+} else {
+    set found 0
+    for {set p $port} {$p < ($port + 200)} {incr p} {
+        if {[is_port_free $p]} {
+            set port $p
+            set found 1
+            break
+        }
+    }
+    if {!$found} {
+        puts stderr "\[expect\] failed to find free port near $port"
+        exit 2
+    }
+}
+
+cd [file dirname [info script]]
+
+if {![file exists "./ime_host_skeleton.exe"]} {
+    puts stderr "\[expect\] missing ./ime_host_skeleton.exe, build it first"
+    exit 2
+}
+
+if {[file exists $wine_runner]} {
+    set cmd [list bash $wine_runner ./ime_host_skeleton.exe --port $port --dll $dll]
+} else {
+    set cmd [list wine ./ime_host_skeleton.exe --port $port --dll $dll]
+}
+if {$show_window} {
+    lappend cmd --show-window
+}
+
+puts "\[expect\] spawn: $cmd"
+if {!$show_host_log} {
+    log_user 0
+}
+spawn -noecho {*}$cmd
+set host_spawn $spawn_id
+
+# Do not depend on exact host log text; use socket-connect readiness instead.
+after 1200
+
+set sock ""
+# First start on a fresh prefix can take longer, so keep a wider connect window.
+for {set retry 0} {$retry < $connect_retry_count} {incr retry} {
+    if {[catch {socket 127.0.0.1 $port} s] == 0} {
+        set sock $s
+        break
+    }
+    after $connect_retry_interval_ms
+}
+
+if {$sock eq ""} {
+    puts stderr "\[expect\] failed to connect TCP 127.0.0.1:$port"
+    terminate_spawn $host_spawn $host_wait_timeout_sec
+    exit 1
+}
+
+fconfigure $sock -translation lf -buffering line -blocking 1
+
+if {[gets $sock hello] < 0} {
+    puts stderr "\[expect\] no greeting from host"
+    catch {close $sock}
+    terminate_spawn $host_spawn $host_wait_timeout_sec
+    exit 1
+}
+puts "\[expect\] $hello"
+
+proc send_and_read {sock cmd} {
+    puts $sock $cmd
+    flush $sock
+    if {[gets $sock line] < 0} {
+        error "socket closed while waiting for reply to '$cmd'"
+    }
+    puts "\[expect\] $cmd => $line"
+    return $line
+}
+
+if {[catch {
+    set status1 [send_and_read $sock "STATUS"]
+    set act1 [send_and_read $sock "ACTIVATE"]
+    set cp1 [send_and_read $sock "CP 936"]
+    set pipe1 [send_and_read $sock "PIPEU ni"]
+    set pre1 [send_and_read $sock "PREEDIT"]
+    set cand1 [send_and_read $sock "CAND"]
+    set page1 [send_and_read $sock "PAGEDOWN"]
+    set pick1 [send_and_read $sock "PICK 1"]
+    set conv1 [send_and_read $sock "CONV ni"]
+    set status2 [send_and_read $sock "STATUS"]
+    set bye [send_and_read $sock "QUIT"]
+} smoke_err]} {
+    puts stderr "\[expect\] smoke command failed: $smoke_err"
+    catch {close $sock}
+    terminate_spawn $host_spawn $host_wait_timeout_sec
+    exit 1
+}
+
+catch {close $sock}
+
+if {![regexp {visible=0|visible=1} $status1]} {
+    puts stderr "\[expect\] warning: STATUS format unexpected"
+}
+
+set spawn_id $host_spawn
+set old_timeout $timeout
+set timeout $host_wait_timeout_sec
+expect {
+    eof {}
+    timeout {
+        puts stderr "\[expect\] host did not exit after QUIT"
+        terminate_spawn $host_spawn $host_wait_timeout_sec
+        set timeout $old_timeout
+        exit 1
+    }
+}
+
+set timeout $old_timeout
+
+catch {wait -i $host_spawn}
+puts "\[expect\] done"
+exit 0
