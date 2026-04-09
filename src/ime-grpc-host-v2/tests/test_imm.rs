@@ -225,4 +225,12 @@ async fn test_shift() {
     let keys = [(VK_S, 0, 's'), (VK_SHIFT, (VK_RSHIFT.0 as u32) << 16, 'S')];// s then left shift
     run_test_sequence(&mut adapter, "s", &keys).await;
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn test_return() {
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let keys = [(VK_S, 0, 's'), (VK_RETURN, 0, '\n')];// s then return
+    run_test_sequence(&mut adapter, "s", &keys).await;
+}
 // Removed not(windows) main as we are an integration test.
