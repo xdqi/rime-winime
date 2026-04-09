@@ -36,6 +36,7 @@ static Bool (*original_select_candidate_on_current_page)(RimeSessionId, size_t);
 struct GrpcSchemaInfo {
     std::string backend_address;
     int timeout_ms;
+    std::string v_mode_preedit_regex;  // optional, applied on first use
 };
 static std::unordered_map<std::string, GrpcSchemaInfo> g_grpc_schemas;
 
@@ -113,17 +114,28 @@ static SessionState& EnsureSession(RimeSessionId session_id) {
     // Is the new schema a gRPC schema?
     auto it = g_grpc_schemas.find(cur_schema);
     if (it != g_grpc_schemas.end()) {
+        // Lazily create the gRPC client on first use of this backend.
         auto client = GrpcImeClientV2::GetOrCreate(
             it->second.backend_address, it->second.timeout_ms);
-        if (client && client->OpenSession(session_id)) {
-            ss.is_grpc = true;
-            ss.backend_address = it->second.backend_address;
-            LOG(INFO) << "[grpc_proxy] session " << session_id
-                      << " -> gRPC schema '" << cur_schema
-                      << "' @ " << ss.backend_address;
+        if (client) {
+            // Apply v_mode regex config (idempotent).
+            if (!it->second.v_mode_preedit_regex.empty() &&
+                !client->HasVModeRegex()) {
+                client->SetVModeRegex(it->second.v_mode_preedit_regex);
+            }
+            if (client->OpenSession(session_id)) {
+                ss.is_grpc = true;
+                ss.backend_address = it->second.backend_address;
+                LOG(INFO) << "[grpc_proxy] session " << session_id
+                          << " -> gRPC schema '" << cur_schema
+                          << "' @ " << ss.backend_address;
+            } else {
+                LOG(WARNING) << "[grpc_proxy] failed to open gRPC session for schema '"
+                             << cur_schema << "'";
+            }
         } else {
-            LOG(WARNING) << "[grpc_proxy] failed to open gRPC session for schema '"
-                         << cur_schema << "'";
+            LOG(WARNING) << "[grpc_proxy] failed to create client for "
+                         << it->second.backend_address;
         }
     } else {
         LOG(INFO) << "[grpc_proxy] session " << session_id
@@ -526,17 +538,17 @@ static void rime_grpc_proxy_v2_initialize() {
                       if (api->config_get_int(&cfg, "grpc_proxy/rpc_timeout_ms", &t) && t > 0) {
                           info.timeout_ms = t;
                       }
-                      g_grpc_schemas[sid] = info;
-                      // Pre-create the client so it's ready.
-                      auto client = GrpcImeClientV2::GetOrCreate(
-                          info.backend_address, info.timeout_ms);
-                      // Load v_mode_regex if present.
+                      // Save v_mode_regex config for lazy application.
                       char regex_buf[256] = {};
                       if (api->config_get_string(&cfg, "grpc_proxy/v_mode_preedit_regex",
                                                  regex_buf, sizeof(regex_buf)) &&
-                          regex_buf[0] && client) {
-                          client->SetVModeRegex(regex_buf);
+                          regex_buf[0]) {
+                          info.v_mode_preedit_regex = regex_buf;
                       }
+                      g_grpc_schemas[sid] = info;
+                      // NOTE: gRPC client is NOT created here — it will be
+                      // lazily created in EnsureSession() when this schema
+                      // is first activated, avoiding startup blocking.
                       LOG(INFO) << "[grpc_proxy] registered gRPC schema '"
                                 << sid << "' -> " << info.backend_address
                                 << " timeout=" << info.timeout_ms << "ms";
