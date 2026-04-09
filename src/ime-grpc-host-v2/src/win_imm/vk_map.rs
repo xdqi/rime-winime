@@ -1,10 +1,10 @@
-use windows::Win32::UI::Input::KeyboardAndMouse::{VkKeyScanW, MapVirtualKeyW, MAPVK_VK_TO_VSC};
+use windows::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, VkKeyScanW, MAPVK_VK_TO_VSC};
 
 pub fn is_shifted_char(keycode: u32) -> bool {
     match keycode {
         // Shifted numbers and punctuation
-        0x21 | 0x40 | 0x23 | 0x24 | 0x25 | 0x5E | 0x26 | 0x2A | 0x28 | 0x29 |
-        0x7E | 0x5F | 0x2B | 0x7B | 0x7D | 0x7C | 0x3A | 0x22 | 0x3C | 0x3E | 0x3F => true,
+        0x21 | 0x40 | 0x23 | 0x24 | 0x25 | 0x5E | 0x26 | 0x2A | 0x28 | 0x29 | 0x7E | 0x5F
+        | 0x2B | 0x7B | 0x7D | 0x7C | 0x3A | 0x22 | 0x3C | 0x3E | 0x3F => true,
         c if c >= 0x41 && c <= 0x5A => true, // A-Z
         _ => false,
     }
@@ -16,7 +16,7 @@ pub fn rime_to_vk(keycode: u32) -> u32 {
         0xFF09 => 0x09, // VK_TAB
         0xFF0D => 0x0D, // VK_RETURN
         0xFF1B => 0x1B, // VK_ESCAPE
-        0x020  => 0x20, // VK_SPACE
+        0x020 => 0x20,  // VK_SPACE
         0xFF50 => 0x24, // VK_HOME
         0xFF51 => 0x25, // VK_LEFT
         0xFF52 => 0x26, // VK_UP
@@ -27,7 +27,7 @@ pub fn rime_to_vk(keycode: u32) -> u32 {
         0xFF57 => 0x23, // VK_END
         0xFF63 => 0x2D, // VK_INSERT
         0xFFFF => 0x2E, // VK_DELETE
-        
+
         // Modifier keys:
         0xFFE1 => 0xA0, // VK_LSHIFT
         0xFFE2 => 0xA1, // VK_RSHIFT
@@ -74,12 +74,9 @@ pub fn rime_to_vk(keycode: u32) -> u32 {
         c if c >= 0x30 && c <= 0x39 => {
             c // 0-9
         }
-        
+
         // Punctuation (shifted versions) handled explicitly above, others fallback to keycode
-        
-        c if c < 0x7F => {
-            unsafe { (VkKeyScanW(c as u16) & 0xFF) as u32 }
-        }
+        c if c < 0x7F => unsafe { (VkKeyScanW(c as u16) & 0xFF) as u32 },
         _ => keycode, // fallback
     }
 }
@@ -101,7 +98,11 @@ pub fn make_l_key_data(vkey: u32, is_keyup: bool, is_alt: bool) -> u32 {
 }
 
 #[cfg(not(windows))]
-pub fn rime_to_vk(keycode: u32) -> u32 { keycode }
+pub fn rime_to_vk(keycode: u32) -> u32 {
+    keycode
+}
 
 #[cfg(not(windows))]
-pub fn make_l_key_data(vkey: u32, is_keyup: bool, is_alt: bool) -> u32 { 0 }
+pub fn make_l_key_data(vkey: u32, is_keyup: bool, is_alt: bool) -> u32 {
+    0
+}

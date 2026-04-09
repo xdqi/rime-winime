@@ -22,7 +22,7 @@ pub trait RimeBackend: Send + Sync {
 
     /// Commit current selection/composition and retrieve the finalized text.
     async fn get_commit(&mut self, session_id: usize) -> Option<String>;
-    
+
     /// Select a candidate (trigger commit or modification on the IME).
     async fn select_candidate(&mut self, session_id: usize, index: usize) -> bool;
 }

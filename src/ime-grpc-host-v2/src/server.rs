@@ -29,7 +29,9 @@ impl RimeService for RimeServerImpl {
     ) -> Result<Response<OpenSessionResponse>, Status> {
         let mut backend = self.backend.lock().await;
         if let Some(id) = backend.open_session().await {
-            Ok(Response::new(OpenSessionResponse { session_id: id.to_string() }))
+            Ok(Response::new(OpenSessionResponse {
+                session_id: id.to_string(),
+            }))
         } else {
             Err(Status::internal("Failed to open session"))
         }
@@ -97,9 +99,9 @@ impl RimeService for RimeServerImpl {
         let req = request.into_inner();
         let session_id = req.session_id.parse::<usize>().unwrap_or(0);
         let mut backend = self.backend.lock().await;
-        
+
         backend.destroy_session(session_id).await;
-        
+
         Ok(Response::new(DestroySessionResponse { success: true }))
     }
 

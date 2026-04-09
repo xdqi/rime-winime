@@ -16,27 +16,27 @@ pub fn lookup(keycode: u32) -> Option<&'static str> {
     // SogouPY's dictionary-based mappings (override the mechanical +0xFEE0).
     // These match the default SogouPinyin punctuation table.
     match keycode as u8 as char {
-        ',' => Some("\u{FF0C}"),     // ，
-        '.' => Some("\u{3002}"),     // 。
-        ';' => Some("\u{FF1B}"),     // ；
-        ':' => Some("\u{FF1A}"),     // ：
-        '?' => Some("\u{FF1F}"),     // ？
-        '!' => Some("\u{FF01}"),     // ！
-        '\\' => Some("\u{3001}"),    // 、
-        '(' => Some("\u{FF08}"),     // （
-        ')' => Some("\u{FF09}"),     // ）
-        '<' => Some("\u{300A}"),     // 《
-        '>' => Some("\u{300B}"),     // 》
-        '[' => Some("\u{3010}"),     // 【
-        ']' => Some("\u{3011}"),     // 】
-        '{' => Some("\u{FF5B}"),     // ｛
-        '}' => Some("\u{FF5D}"),     // ｝
+        ',' => Some("\u{FF0C}"),         // ，
+        '.' => Some("\u{3002}"),         // 。
+        ';' => Some("\u{FF1B}"),         // ；
+        ':' => Some("\u{FF1A}"),         // ：
+        '?' => Some("\u{FF1F}"),         // ？
+        '!' => Some("\u{FF01}"),         // ！
+        '\\' => Some("\u{3001}"),        // 、
+        '(' => Some("\u{FF08}"),         // （
+        ')' => Some("\u{FF09}"),         // ）
+        '<' => Some("\u{300A}"),         // 《
+        '>' => Some("\u{300B}"),         // 》
+        '[' => Some("\u{3010}"),         // 【
+        ']' => Some("\u{3011}"),         // 】
+        '{' => Some("\u{FF5B}"),         // ｛
+        '}' => Some("\u{FF5D}"),         // ｝
         '^' => Some("\u{2026}\u{2026}"), // ……
         '_' => Some("\u{2014}\u{2014}"), // ——
-        '~' => Some("\u{FF5E}"),     // ～
-        '`' => Some("\u{00B7}"),     // ·
-        '$' => Some("\u{FFE5}"),     // ￥
-        ' ' => Some("\u{3000}"),     // ideographic space
+        '~' => Some("\u{FF5E}"),         // ～
+        '`' => Some("\u{00B7}"),         // ·
+        '$' => Some("\u{FFE5}"),         // ￥
+        ' ' => Some("\u{3000}"),         // ideographic space
         // For remaining printable ASCII 33–126, use the mechanical
         // fullwidth mapping (char + 0xFEE0).
         c if c.is_ascii_graphic() => None, // caller falls through to +0xFEE0

@@ -5,7 +5,6 @@ pub mod proto {
     }
 }
 
-
 #[cfg(windows)]
 pub mod win_imm;
 

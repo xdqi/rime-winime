@@ -1,7 +1,7 @@
 // Modules are provided by the library crate
+use clap::Parser;
 use ime_grpc_host_v2::proto;
 use ime_grpc_host_v2::server;
-use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -11,7 +11,11 @@ struct Args {
     bind: String,
 
     /// Path to the IME DLL (e.g. C:\Windows\system32\SogouPY.ime or C:\Windows\system32\QQPinyin.ime)
-    #[arg(long, env = "GRPC_IME_PATH", default_value = "C:\\Windows\\system32\\SogouPY.ime")]
+    #[arg(
+        long,
+        env = "GRPC_IME_PATH",
+        default_value = "C:\\Windows\\system32\\SogouPY.ime"
+    )]
     ime_path: String,
 
     /// Whether to show the hidden message window for debugging

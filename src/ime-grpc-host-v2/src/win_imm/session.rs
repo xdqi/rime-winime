@@ -1,17 +1,19 @@
-
+use std::sync::Once;
+use windows::core::w;
 use windows::Win32::Foundation::{HMODULE, HWND, LPARAM, LRESULT, WPARAM};
 use windows::Win32::UI::Input::Ime::{
-    HIMC, ImmCreateContext, ImmAssociateContext, ImmDestroyContext,
+    ImmAssociateContext, ImmCreateContext, ImmDestroyContext, HIMC,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DestroyWindow, DefWindowProcW, RegisterClassW,
-    HWND_MESSAGE, WINDOW_EX_STYLE, WINDOW_STYLE, WS_VISIBLE, WNDCLASSW,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, HWND_MESSAGE, WINDOW_EX_STYLE,
+    WINDOW_STYLE, WNDCLASSW, WS_VISIBLE,
 };
-use windows::core::w;
-use std::sync::Once;
 
 unsafe extern "system" fn default_wndproc(
-    hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM,
+    hwnd: HWND,
+    msg: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
 ) -> LRESULT {
     DefWindowProcW(hwnd, msg, wparam, lparam)
 }
@@ -19,20 +21,18 @@ unsafe extern "system" fn default_wndproc(
 static REGISTER_CLASS: Once = Once::new();
 
 fn ensure_window_class() {
-    REGISTER_CLASS.call_once(|| {
-        unsafe {
-            let wc = WNDCLASSW {
-                lpfnWndProc: Some(default_wndproc),
-                lpszClassName: w!("ImeHostWindow").into(),
-                hInstance: windows::Win32::System::LibraryLoader::GetModuleHandleW(None)
-                    .unwrap_or_default()
-                    .into(),
-                ..std::mem::zeroed()
-            };
-            let atom = RegisterClassW(&wc);
-            if atom == 0 {
-                tracing::error!("Failed to register ImeHostWindow class");
-            }
+    REGISTER_CLASS.call_once(|| unsafe {
+        let wc = WNDCLASSW {
+            lpfnWndProc: Some(default_wndproc),
+            lpszClassName: w!("ImeHostWindow").into(),
+            hInstance: windows::Win32::System::LibraryLoader::GetModuleHandleW(None)
+                .unwrap_or_default()
+                .into(),
+            ..std::mem::zeroed()
+        };
+        let atom = RegisterClassW(&wc);
+        if atom == 0 {
+            tracing::error!("Failed to register ImeHostWindow class");
         }
     });
 }
@@ -46,18 +46,33 @@ pub struct WinImmSession {
 }
 
 impl WinImmSession {
-    pub fn create(session_id: usize, h_ime_module: HMODULE, show_window: bool) -> Result<Self, windows::core::Error> {
+    pub fn create(
+        session_id: usize,
+        h_ime_module: HMODULE,
+        show_window: bool,
+    ) -> Result<Self, windows::core::Error> {
         ensure_window_class();
         unsafe {
-            let style = if show_window { WS_VISIBLE } else { WINDOW_STYLE(0) };
-            let parent = if show_window { HWND(0 as _) } else { HWND_MESSAGE };
-            
+            let style = if show_window {
+                WS_VISIBLE
+            } else {
+                WINDOW_STYLE(0)
+            };
+            let parent = if show_window {
+                HWND(0 as _)
+            } else {
+                HWND_MESSAGE
+            };
+
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE(0),
                 w!("ImeHostWindow"),
                 w!("HiddenImeWindow"),
                 style,
-                0, 0, 800, 600,
+                0,
+                0,
+                800,
+                600,
                 parent,
                 None,
                 None,
@@ -65,7 +80,7 @@ impl WinImmSession {
             )?;
 
             let himc = ImmCreateContext();
-            
+
             // ImmAssociateContext returns the previous HIMC and sets the
             // INPUTCONTEXT.hWnd — needed for ImmGenerateMessage to know
             // which window to SendMessage to.
@@ -94,4 +109,3 @@ impl WinImmSession {
 // provided we respect Win32 thread affinity rules where applicable (e.g., pumping messages on the thread that created the HWND).
 unsafe impl Send for WinImmSession {}
 unsafe impl Sync for WinImmSession {}
-

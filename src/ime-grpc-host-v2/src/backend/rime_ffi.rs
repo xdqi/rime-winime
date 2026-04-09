@@ -97,7 +97,8 @@ pub struct RimeApi {
     pub set_option: extern "C" fn(RimeSessionId, *const c_char, Bool),
     pub get_option: extern "C" fn(RimeSessionId, *const c_char) -> Bool,
     pub set_property: extern "C" fn(RimeSessionId, *const c_char, *const c_char),
-    pub get_property: extern "C" fn(RimeSessionId, *const c_char, *mut c_char, libc::size_t) -> Bool,
+    pub get_property:
+        extern "C" fn(RimeSessionId, *const c_char, *mut c_char, libc::size_t) -> Bool,
     pub get_schema_list: extern "C" fn(*mut c_void) -> Bool,
     pub free_schema_list: extern "C" fn(*mut c_void),
     pub get_current_schema: extern "C" fn(RimeSessionId, *mut c_char, libc::size_t) -> Bool,
