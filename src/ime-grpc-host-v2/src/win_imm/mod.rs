@@ -5,6 +5,7 @@ pub mod session;
 pub mod thread_pump;
 pub mod channel_adapter;
 pub mod vk_map;
+pub mod punct_map;
 
 use std::collections::HashMap;
 use std::sync::OnceLock;
@@ -179,9 +180,9 @@ impl RimeBackend for ImmRimeAdapter {
 
                     let l_key_data = crate::win_imm::vk_map::make_l_key_data(vk, is_keyup, is_alt);
 
-                    tracing::info!(
-                        "process_key input: keycode=0x{:X}, modifiers={}, is_keyup={}, is_shift={}, is_ctrl={}, is_alt={} => vk=0x{:X}",
-                        key.keycode, modifiers, is_keyup, is_shift, is_ctrl, is_alt, vk
+                    tracing::debug!(
+                        "process_key: keycode=0x{:X} mod={} vk=0x{:X}",
+                        key.keycode, modifiers, vk
                     );
 
                     let is_consumed = unsafe {
@@ -195,12 +196,9 @@ impl RimeBackend for ImmRimeAdapter {
                         // Windows typically restores keyboard state later or doesn't care
                         res
                     };
-                    tracing::info!("ImeProcessKey returned: {:?}", is_consumed);
+                    tracing::debug!("ImeProcessKey => {:?}", is_consumed);
 
                     if is_consumed.as_bool() {
-                        // Allocate a TRANSMSGLIST buffer for ImeToAsciiEx output.
-                        // TRANSMSG has pointer-sized fields (WPARAM/LPARAM), so its
-                        // layout differs between 32-bit and 64-bit targets.
                         use windows::Win32::UI::Input::Ime::{TRANSMSG, TRANSMSGLIST};
 
                         const MAX_TRANS_MSGS: usize = 256;
@@ -208,26 +206,23 @@ impl RimeBackend for ImmRimeAdapter {
                         let transmsg_size = std::mem::size_of::<TRANSMSG>();
                         let total_bytes = header_size + transmsg_size * MAX_TRANS_MSGS;
 
-                        // Vec<u64> guarantees 8-byte alignment, sufficient for TRANSMSG on all targets
                         let mut trans_buf = vec![0u64; (total_bytes + 7) / 8];
-                        let buf_ptr = trans_buf.as_mut_ptr() as *mut u8;
-                        let list_ptr = buf_ptr as *mut TRANSMSGLIST;
-
-                        // Write max message count into TRANSMSGLIST.uMsgCount
+                        let list_ptr = trans_buf.as_mut_ptr() as *mut TRANSMSGLIST;
                         unsafe { (*list_ptr).uMsgCount = MAX_TRANS_MSGS as u32; }
 
                         let msg_count = unsafe {
                             (ime.to_ascii_ex)(
                                 vk,
-                                0, // scancode
+                                0,
                                 key_state.as_ptr(),
                                 list_ptr,
-                                0, // fuState
+                                0,
                                 session.himc,
                             )
                         } as i32;
-                        tracing::info!("ToAsciiEx returned translation message count: {}", msg_count);
+                        tracing::debug!("ToAsciiEx => {}", msg_count);
 
+                        // Phase 1: iterate TRANSMSGLIST for commit signals
                         let mut has_commit_msg = false;
                         let mut char_commits = String::new();
                         let actual_count = if msg_count > 0 {
@@ -238,69 +233,74 @@ impl RimeBackend for ImmRimeAdapter {
                         for i in 0..actual_count {
                             let msg = unsafe { &*msgs_ptr.add(i) };
                             let message = msg.message;
-                            let wparam = msg.wParam.0 as u32;
-                            let lparam = msg.lParam.0 as u32;
-                            if message == 0 { continue; } // skip WM_NULL / padding
-                            tracing::info!("Trans msg: 0x{:X}, wp: 0x{:X}, lp: 0x{:X}", message, wparam, lparam);
+                            let wp = msg.wParam.0 as u32;
+                            let lp = msg.lParam.0 as u32;
+                            if message == 0 { continue; }
                             if message == 0x010F /* WM_IME_COMPOSITION */
-                                && (lparam & 0x0800 /* GCS_RESULTSTR */) != 0 {
+                                && (lp & 0x0800 /* GCS_RESULTSTR */) != 0 {
                                 has_commit_msg = true;
                             }
-                            if message == 0x0286 /* WM_IME_CHAR */ || message == 0x0102 /* WM_CHAR */ {
-                                if let Some(ch) = std::char::from_u32(wparam & 0xFFFF) {
+                            // Collect characters from WM_IME_CHAR (0x286) or WM_CHAR (0x102)
+                            if message == 0x0286 || message == 0x0102 {
+                                if let Some(ch) = std::char::from_u32(wp & 0xFFFF) {
                                     char_commits.push(ch);
-                                    tracing::info!("Collected WM_(IME)_CHAR: 0x{:X} -> {}", wparam, ch);
                                 }
                             }
                         }
-                        
+
+                        // Phase 2: try reading GCS_RESULTSTR (may be empty if IME cleared it)
                         if has_commit_msg {
                             if let Some(rstr) = crate::win_imm::imm_ops::get_result_string(session.himc) {
                                 let mut s = session.pending_commit.take().unwrap_or_default();
                                 s.push_str(&rstr);
                                 session.pending_commit = Some(s);
-                                tracing::info!("Collected GCS_RESULTSTR: {}", rstr);
+                                tracing::info!("commit: '{}'", rstr);
                             } else {
-                                tracing::warn!("GCS_RESULTSTR flag was set but get_result_string returned None");
-                            }
-                        } else if !char_commits.is_empty() {
-                            let mut s = session.pending_commit.take().unwrap_or_default();
-                            s.push_str(&char_commits);
-                            session.pending_commit = Some(s);
-                        }
-                        // Probe: pump the hidden window's message queue to see if the IME
-                        // injected any keybd_event (e.g. VK_LEFT for paired brackets)
-                        unsafe {
-                            let mut msg: windows::Win32::UI::WindowsAndMessaging::MSG = std::mem::zeroed();
-                            let mut queue_msgs = Vec::new();
-                            while windows::Win32::UI::WindowsAndMessaging::PeekMessageW(
-                                &mut msg,
-                                session.hwnd,
-                                0, 0,
-                                windows::Win32::UI::WindowsAndMessaging::PM_REMOVE,
-                            ).as_bool() {
-                                queue_msgs.push((msg.message, msg.wParam.0 as u32, msg.lParam.0 as u32));
-                                // Prevent infinite loop: limit to 32 messages
-                                if queue_msgs.len() >= 32 { break; }
-                            }
-                            // Also check thread messages (HWND(0))
-                            while windows::Win32::UI::WindowsAndMessaging::PeekMessageW(
-                                &mut msg,
-                                windows::Win32::Foundation::HWND(0 as _),
-                                0, 0,
-                                windows::Win32::UI::WindowsAndMessaging::PM_REMOVE,
-                            ).as_bool() {
-                                queue_msgs.push((msg.message, msg.wParam.0 as u32, msg.lParam.0 as u32));
-                                if queue_msgs.len() >= 64 { break; }
-                            }
-                            if !queue_msgs.is_empty() {
-                                for (m, wp, lp) in &queue_msgs {
-                                    tracing::info!("Queued msg: 0x{:X}, wp: 0x{:X}, lp: 0x{:X}", m, wp, lp);
+                                // SogouPY does not populate COMPOSITIONSTRING.dwResultStr
+                                // for standalone punctuation (no prior composition).
+                                // Fall back to our Chinese punctuation mapping table.
+                                if let Some(punct) = crate::win_imm::punct_map::map_punctuation(key.keycode) {
+                                    let mut s = session.pending_commit.take().unwrap_or_default();
+                                    s.push_str(&punct);
+                                    session.pending_commit = Some(s);
+                                    tracing::info!("commit (punct fallback): '{}'", punct);
+                                } else {
+                                    tracing::warn!("GCS_RESULTSTR empty and no punct mapping for keycode=0x{:X}", key.keycode);
                                 }
-                            } else {
-                                tracing::info!("No queued messages after ImeToAsciiEx");
                             }
                         }
+
+                        // Phase 3: pump WM_CHAR from message queue
+                        // (posted by our WndProc if it handled WM_IME_COMPOSITION
+                        //  via 0x8BB8 or ImmGenerateMessage)
+                        unsafe {
+                            use windows::Win32::UI::WindowsAndMessaging::{
+                                PeekMessageW, PM_REMOVE, MSG,
+                            };
+                            let mut msg_buf: MSG = std::mem::zeroed();
+                            let mut wm_chars = String::new();
+                            while PeekMessageW(
+                                &mut msg_buf, session.hwnd,
+                                0x0102, 0x0102, PM_REMOVE,
+                            ).as_bool() {
+                                if let Some(ch) = std::char::from_u32(msg_buf.wParam.0 as u32) {
+                                    wm_chars.push(ch);
+                                }
+                                if wm_chars.len() > 256 { break; }
+                            }
+                            if !wm_chars.is_empty() {
+                                tracing::debug!("WM_CHAR queue: '{}'", wm_chars);
+                                let mut s = session.pending_commit.take().unwrap_or_default();
+                                s.push_str(&wm_chars);
+                                session.pending_commit = Some(s);
+                            }
+                        }
+
+                        // Phase 4: if no commit data from above, try char_commits
+                        if session.pending_commit.is_none() && !char_commits.is_empty() {
+                            session.pending_commit = Some(char_commits);
+                        }
+
                         return true;
                     }
                 }
