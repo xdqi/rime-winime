@@ -1,8 +1,8 @@
 # schema: grpc_proxy.schema.yaml
 schema:
   schema_id: grpc_proxy
-  name: RPC Proxy (V2 Clean)
-  version: "0.2"
+  name: RPC Proxy (V2)
+  version: "0.3"
 
 grpc_proxy:
   backend_address: "127.0.0.1:50051"
@@ -11,7 +11,17 @@ grpc_proxy:
   # instead of numeric (1-5).  Default: "^v\\d" (Sogou v-mode)
   v_mode_preedit_regex: "^v\\d"
 
+# Shift toggle and schema switching are handled locally by rime.
+# The switcher processor is auto-prepended by the engine.
+ascii_composer:
+  switch_key:
+    Shift_L: inline_ascii
+    Shift_R: commit_text
+    Control_L: noop
+    Control_R: noop
+
 engine:
   processors:
-    - grpc_key_event_processor # This is the ONLY processor now!
-    # No segementors, no translators! The host does it all.
+    - ascii_composer              # Shift to toggle Chinese/English
+    - grpc_key_event_processor    # Forward remaining keys to gRPC backend
+    # No segmentors, no translators — the gRPC host does it all.
