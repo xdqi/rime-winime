@@ -217,4 +217,12 @@ async fn test_mp3() {
     let keys = [(VK_M, 0, 'm'), (VK_P, 0, 'p'), (VK_3, 0, '3')];
     run_test_sequence(&mut adapter, "MP3", &keys).await;
 }
+
+#[cfg(windows)]
+#[tokio::test]
+async fn test_shift() {
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let keys = [(VK_S, 0, 's'), (VK_SHIFT, (VK_RSHIFT.0 as u32) << 16, 'S')];// s then left shift
+    run_test_sequence(&mut adapter, "s", &keys).await;
+}
 // Removed not(windows) main as we are an integration test.
