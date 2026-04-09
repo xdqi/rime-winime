@@ -45,15 +45,6 @@ static RIME_FLAVORED(RimeContext) g_last_context;
 static bool g_has_last_context = false;
 static Bool g_last_is_composing = False;
 
-// --- Shift-to-toggle ascii_mode ---
-// XK_Shift_L / XK_Shift_R from X11 keysym (same as ibus)
-static constexpr int kXK_Shift_L = 0xFFE1;
-static constexpr int kXK_Shift_R = 0xFFE2;
-static bool g_ascii_mode = false;       // current ascii (English) mode
-static bool g_shift_pressed = false;    // a Shift key is currently held down
-static bool g_shift_is_clean = false;   // no other key was pressed during hold
-static int  g_shift_keycode = 0;        // which Shift key (L or R)
-
 static RimeSessionId MyCreateSession() {
     auto client = GrpcImeClientV2::Instance();
     if (client) {
@@ -88,60 +79,14 @@ static Bool MyFindSession(RimeSessionId session_id) {
 }
 
 static Bool MyProcessKey(RimeSessionId session_id, int keycode, int mask) {
-    const bool is_release = (mask & kReleaseMask) != 0;
-    const bool is_shift = (keycode == kXK_Shift_L || keycode == kXK_Shift_R);
-
-    // --- Shift-to-toggle ascii_mode logic ---
-    if (is_shift && !is_release) {
-        // Shift key pressed down: start tracking a potential clean tap
-        g_shift_pressed = true;
-        g_shift_is_clean = true;
-        g_shift_keycode = keycode;
-        g_last_was_keyup_skip = false;
-        g_last_process_key_accepted = false;
-        return False;  // don't consume Shift press
-    }
-
-    if (is_shift && is_release && g_shift_pressed) {
-        g_shift_pressed = false;
-        if (g_shift_is_clean) {
-            // Clean Shift tap detected — toggle ascii_mode
-            g_ascii_mode = !g_ascii_mode;
-            LOG(INFO) << "[grpc_proxy] Shift tap -> ascii_mode = "
-                      << (g_ascii_mode ? "ON (English)" : "OFF (Chinese)");
-            g_last_was_keyup_skip = true;
-            g_last_process_key_accepted = false;
-            // Clear composing state snapshot so UI refreshes
-            if (g_ascii_mode && g_has_last_context) {
-                g_last_is_composing = False;
-            }
-            return True;  // consume the Shift release to signal state change
-        }
-        // Shift released after another key was pressed — normal key release
-        g_last_was_keyup_skip = true;
-        return False;
-    }
-
-    // Any non-Shift key breaks a pending clean Shift tap
-    if (g_shift_pressed) {
-        g_shift_is_clean = false;
-    }
-
     // Skip key release events — Sogou IME never consumes them (always BOOL(0)),     
     // but each RPC costs ~10ms. Skipping halves the RPC count.
     // kReleaseMask = 1 << 30
-    if (is_release) {
+    if (mask & kReleaseMask) {
         g_last_was_keyup_skip = true;
         return False;
     }
     g_last_was_keyup_skip = false;
-
-    // When in ascii_mode, don't send keys to gRPC — let them pass through
-    // as raw English characters.
-    if (g_ascii_mode) {
-        g_last_process_key_accepted = false;
-        return False;
-    }
 
     LOG(INFO) << "[grpc_proxy] MyProcessKey called(session=" << session_id << ", keycode=" << keycode << ", mask=" << mask << ")";
     auto client = GrpcImeClientV2::Instance();
@@ -252,12 +197,6 @@ static Bool RestoreContextSnapshot(RIME_FLAVORED(RimeContext)* dst) {
 static Bool MyGetContext(RimeSessionId session_id, RIME_FLAVORED(RimeContext)* context) {
     if (!context || context->data_size <= 0) return False;
 
-    // In ascii_mode, there's no Chinese composition — return empty context.
-    if (g_ascii_mode) {
-        RIME_STRUCT_CLEAR(*context);
-        return True;
-    }
-
     auto client = GrpcImeClientV2::Instance();
     if (!client || !client->HasSession(session_id)) {
         if (original_get_context) {
@@ -357,7 +296,6 @@ static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* sta
     if (g_last_was_keyup_skip) {
         RIME_STRUCT_CLEAR(*status);
         status->is_composing = g_last_is_composing;
-        status->is_ascii_mode = g_ascii_mode ? True : False;
         status->schema_id = StrDup("grpc");
         status->schema_name = StrDup("gRPC Proxy");
         
@@ -370,7 +308,6 @@ static Bool MyGetStatus(RimeSessionId session_id, RIME_FLAVORED(RimeStatus)* sta
     if (client->GetContext(session_id, &proto)) {
         RIME_STRUCT_CLEAR(*status);
         status->is_composing = proto.has_composition();
-        status->is_ascii_mode = g_ascii_mode ? True : False;
         status->schema_id = StrDup("grpc");
         status->schema_name = StrDup("gRPC Proxy");
         
