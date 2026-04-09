@@ -23,6 +23,7 @@ tonic = { version = "0.12", features = ["transport"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4"] }
+xkeysym = "0.2.1"
 [target.'cfg(not(windows))'.dependencies]
 libc = "0.2"
 
