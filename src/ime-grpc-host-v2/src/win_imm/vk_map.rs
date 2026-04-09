@@ -1,4 +1,11 @@
-use windows::Win32::UI::Input::KeyboardAndMouse::{MapVirtualKeyW, VkKeyScanW, MAPVK_VK_TO_VSC};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    MapVirtualKeyW, VkKeyScanW, MAPVK_VK_TO_VSC, VIRTUAL_KEY, VK_0, VK_1, VK_2, VK_3, VK_4, VK_5,
+    VK_6, VK_7, VK_8, VK_9, VK_BACK, VK_CAPITAL, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME,
+    VK_INSERT, VK_LCONTROL, VK_LEFT, VK_LMENU, VK_LSHIFT, VK_LWIN, VK_NEXT, VK_OEM_1, VK_OEM_2,
+    VK_OEM_3, VK_OEM_4, VK_OEM_5, VK_OEM_6, VK_OEM_7, VK_OEM_CLEAR, VK_OEM_COMMA, VK_OEM_MINUS,
+    VK_OEM_PERIOD, VK_OEM_PLUS, VK_PRIOR, VK_RCONTROL, VK_RETURN, VK_RIGHT, VK_RMENU, VK_RSHIFT,
+    VK_RWIN, VK_SPACE, VK_TAB, VK_UP,
+};
 
 pub fn is_shifted_char(keycode: u32) -> bool {
     match keycode {
@@ -10,79 +17,79 @@ pub fn is_shifted_char(keycode: u32) -> bool {
     }
 }
 
-pub fn rime_to_vk(keycode: u32) -> u32 {
+pub fn rime_to_vk(keycode: u32) -> VIRTUAL_KEY {
     match keycode {
-        0xFF08 => 0x08, // VK_BACK
-        0xFF09 => 0x09, // VK_TAB
-        0xFF0D => 0x0D, // VK_RETURN
-        0xFF1B => 0x1B, // VK_ESCAPE
-        0x020 => 0x20,  // VK_SPACE
-        0xFF50 => 0x24, // VK_HOME
-        0xFF51 => 0x25, // VK_LEFT
-        0xFF52 => 0x26, // VK_UP
-        0xFF53 => 0x27, // VK_RIGHT
-        0xFF54 => 0x28, // VK_DOWN
-        0xFF55 => 0x21, // VK_PRIOR (PAGEUP)
-        0xFF56 => 0x22, // VK_NEXT (PAGEDOWN)
-        0xFF57 => 0x23, // VK_END
-        0xFF63 => 0x2D, // VK_INSERT
-        0xFFFF => 0x2E, // VK_DELETE
+        0xFF08 => VK_BACK,
+        0xFF09 => VK_TAB,
+        0xFF0D => VK_RETURN,
+        0xFF1B => VK_ESCAPE,
+        0x020 => VK_SPACE,
+        0xFF50 => VK_HOME,
+        0xFF51 => VK_LEFT,
+        0xFF52 => VK_UP,
+        0xFF53 => VK_RIGHT,
+        0xFF54 => VK_DOWN,
+        0xFF55 => VK_PRIOR,
+        0xFF56 => VK_NEXT,
+        0xFF57 => VK_END,
+        0xFF63 => VK_INSERT,
+        0xFFFF => VK_DELETE,
 
         // Modifier keys:
-        0xFFE1 => 0xA0, // VK_LSHIFT
-        0xFFE2 => 0xA1, // VK_RSHIFT
-        0xFFE3 => 0xA2, // VK_LCONTROL
-        0xFFE4 => 0xA3, // VK_RCONTROL
-        0xFFE9 => 0xA4, // VK_LMENU
-        0xFFEA => 0xA5, // VK_RMENU
-        0xFFE5 => 0x14, // VK_CAPITAL (Caps Lock)
-        0xFFEB => 0x5B, // VK_LWIN
-        0xFFEC => 0x5C, // VK_RWIN
-        0xFF67 => 0x93, // VK_OEM_CLEAR (Menu)
+        0xFFE1 => VK_LSHIFT,
+        0xFFE2 => VK_RSHIFT,
+        0xFFE3 => VK_LCONTROL,
+        0xFFE4 => VK_RCONTROL,
+        0xFFE9 => VK_LMENU,
+        0xFFEA => VK_RMENU,
+        0xFFE5 => VK_CAPITAL,
+        0xFFEB => VK_LWIN,
+        0xFFEC => VK_RWIN,
+        0xFF67 => VK_OEM_CLEAR,
 
         // Punctuation mapped explicitly to OEM virtual keys
-        0x3B | 0x3A => 0xBA, // VK_OEM_1 (;) and (:)
-        0x3D | 0x2B => 0xBB, // VK_OEM_PLUS (=) and (+)
-        0x2C | 0x3C => 0xBC, // VK_OEM_COMMA (,) and (<)
-        0x2D | 0x5F => 0xBD, // VK_OEM_MINUS (-) and (_)
-        0x2E | 0x3E => 0xBE, // VK_OEM_PERIOD (.) and (>)
-        0x2F | 0x3F => 0xBF, // VK_OEM_2 (/) and (?)
-        0x60 | 0x7E => 0xC0, // VK_OEM_3 (`) and (~)
-        0x5B | 0x7B => 0xDB, // VK_OEM_4 ([) and ({)
-        0x5C | 0x7C => 0xDC, // VK_OEM_5 (\) and (|)
-        0x5D | 0x7D => 0xDD, // VK_OEM_6 (]) and (})
-        0x27 | 0x22 => 0xDE, // VK_OEM_7 (') and (")
+        0x3B | 0x3A => VK_OEM_1,      // ; :
+        0x3D | 0x2B => VK_OEM_PLUS,   // = +
+        0x2C | 0x3C => VK_OEM_COMMA,  // , <
+        0x2D | 0x5F => VK_OEM_MINUS,  // - _
+        0x2E | 0x3E => VK_OEM_PERIOD, // . >
+        0x2F | 0x3F => VK_OEM_2,      // / ?
+        0x60 | 0x7E => VK_OEM_3,      // ` ~
+        0x5B | 0x7B => VK_OEM_4,      // [ {
+        0x5C | 0x7C => VK_OEM_5,      // \ |
+        0x5D | 0x7D => VK_OEM_6,      // ] }
+        0x27 | 0x22 => VK_OEM_7,      // ' "
 
         // Shifted numbers !@#$%^&*()
-        0x21 => 0x31,
-        0x40 => 0x32,
-        0x23 => 0x33,
-        0x24 => 0x34,
-        0x25 => 0x35,
-        0x5E => 0x36,
-        0x26 => 0x37,
-        0x2A => 0x38,
-        0x28 => 0x39,
-        0x29 => 0x30,
+        0x21 => VK_1,
+        0x40 => VK_2,
+        0x23 => VK_3,
+        0x24 => VK_4,
+        0x25 => VK_5,
+        0x5E => VK_6,
+        0x26 => VK_7,
+        0x2A => VK_8,
+        0x28 => VK_9,
+        0x29 => VK_0,
 
         c if c >= 0x41 && c <= 0x5A => {
-            c // A-Z
+            VIRTUAL_KEY(c as u16) // A-Z
         }
         c if c >= 0x61 && c <= 0x7A => {
-            c - 0x20 // a-z maps to 0x41-0x5A
+            VIRTUAL_KEY((c - 0x20) as u16) // a-z maps to VK_A-VK_Z
         }
         c if c >= 0x30 && c <= 0x39 => {
-            c // 0-9
+            VIRTUAL_KEY(c as u16) // 0-9
         }
 
         // Punctuation (shifted versions) handled explicitly above, others fallback to keycode
-        c if c < 0x7F => unsafe { (VkKeyScanW(c as u16) & 0xFF) as u32 },
-        _ => keycode, // fallback
+        c if c < 0x7F => unsafe { VIRTUAL_KEY((VkKeyScanW(c as u16) & 0xFF) as u16) },
+        _ => VIRTUAL_KEY(keycode as u16), // fallback
     }
 }
 
-pub fn make_l_key_data(vkey: u32, is_keyup: bool, is_alt: bool) -> u32 {
-    let scan_code = unsafe { MapVirtualKeyW(vkey, MAPVK_VK_TO_VSC) };
+pub fn make_l_key_data(vk: VIRTUAL_KEY, is_keyup: bool, is_alt: bool) -> u32 {
+    let scan_code = unsafe { MapVirtualKeyW(vk.0 as u32, MAPVK_VK_TO_VSC) };
     let repeat_count = 1u32;
     let is_extended = 0u32;
     let prev_key_state = if is_keyup { 1u32 } else { 0u32 };
@@ -98,11 +105,11 @@ pub fn make_l_key_data(vkey: u32, is_keyup: bool, is_alt: bool) -> u32 {
 }
 
 #[cfg(not(windows))]
-pub fn rime_to_vk(keycode: u32) -> u32 {
-    keycode
+pub fn rime_to_vk(keycode: u32) -> VIRTUAL_KEY {
+    VIRTUAL_KEY(keycode as u16)
 }
 
 #[cfg(not(windows))]
-pub fn make_l_key_data(vkey: u32, is_keyup: bool, is_alt: bool) -> u32 {
+pub fn make_l_key_data(vk: VIRTUAL_KEY, is_keyup: bool, is_alt: bool) -> u32 {
     0
 }

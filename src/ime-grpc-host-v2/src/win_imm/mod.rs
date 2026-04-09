@@ -128,7 +128,7 @@ impl ImmRimeAdapter {
                 }
 
                 let vk_u32 = vk.0 as u32;
-                let l_key_data = crate::win_imm::vk_map::make_l_key_data(vk_u32, is_keyup, is_alt);
+                let l_key_data = crate::win_imm::vk_map::make_l_key_data(vk, is_keyup, is_alt);
 
                 tracing::debug!("process_vk: vk=0x{:X} modifiers={}", vk_u32, modifiers);
 
@@ -327,7 +327,6 @@ impl RimeBackend for ImmRimeAdapter {
     }
 
     async fn process_key(&mut self, session_id: usize, key: &KeyEvent) -> bool {
-        let vk = crate::win_imm::vk_map::rime_to_vk(key.keycode);
         let rime_mod = key.modifier;
 
         // Rime's kReleaseMask is 1 << 30
@@ -355,8 +354,13 @@ impl RimeBackend for ImmRimeAdapter {
             win_mod |= 4;
         }
 
-        self.process_vk(session_id, VIRTUAL_KEY(vk as u16), win_mod, is_keyup)
-            .await
+        self.process_vk(
+            session_id,
+            crate::win_imm::vk_map::rime_to_vk(key.keycode),
+            win_mod,
+            is_keyup,
+        )
+        .await
     }
 
     async fn get_context(&mut self, session_id: usize) -> RimeContextProto {

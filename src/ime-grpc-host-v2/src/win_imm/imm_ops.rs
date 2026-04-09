@@ -2,8 +2,9 @@ use windows::core::{s, PCWSTR};
 use windows::Win32::Foundation::{BOOL, HMODULE};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::UI::Input::Ime::{
-    ImmGetCandidateListW, ImmGetCompositionStringW, CANDIDATELIST, GCS_COMPATTR, GCS_COMPSTR,
-    GCS_CURSORPOS, GCS_RESULTSTR, HIMC, TRANSMSGLIST,
+    ImmGetCandidateListW, ImmGetCompositionStringW, ATTR_TARGET_CONVERTED,
+    ATTR_TARGET_NOTCONVERTED, CANDIDATELIST, GCS_COMPATTR, GCS_COMPSTR, GCS_CURSORPOS,
+    GCS_RESULTSTR, HIMC, TRANSMSGLIST,
 };
 
 pub type PImeInquire = unsafe extern "system" fn(
@@ -147,8 +148,9 @@ pub fn get_composition_string(himc: HIMC) -> Option<CompositionData> {
                     let mut start = -1;
                     let mut end = -1;
                     for (i, &attr) in attr_buffer.iter().enumerate() {
-                        if attr == 1 || attr == 3 {
-                            // ATTR_TARGET_CONVERTED or ATTR_TARGET_NOTCONVERTED
+                        if attr == ATTR_TARGET_CONVERTED as u8
+                            || attr == ATTR_TARGET_NOTCONVERTED as u8
+                        {
                             if start == -1 {
                                 start = i as i32;
                             }
