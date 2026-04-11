@@ -1,13 +1,19 @@
+// grpc/abseil headers MUST come first.
+// grpc++ pulls in abseil which #undef's glog's LOG macro on macOS.
+// By including grpc headers before rime/glog, we let glog's LOG()
+// definition take final precedence.
+#include "grpc_client.h"
+#include "grpc_key_event_processor.h"
+
+// Now include rime headers — rime/common.h brings in <glog/logging.h>
+// whose LOG() macro correctly overrides whatever abseil left behind.
 #include <rime_api.h>
+#include <rime/common.h>
 #include <rime/component.h>
 #include <rime/key_event.h>
 #include <rime/registry.h>
 #include <rime/schema.h>
 #include <cstring>
-#include <glog/logging.h>
-
-#include "grpc_key_event_processor.h"
-#include "grpc_client.h"
 
 using namespace rime;
 
