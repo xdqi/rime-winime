@@ -14,7 +14,9 @@
 #include <rime/registry.h>
 #include <rime/schema.h>
 #include <cstring>
+#if defined(__APPLE__)
 #include <dlfcn.h>
+#endif
 
 using namespace rime;
 
