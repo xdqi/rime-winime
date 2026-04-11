@@ -1,0 +1,35 @@
+# schema: remote.schema.yaml
+schema:
+  schema_id: remote
+  name: Remote IME
+  version: "0.1"
+
+remote:
+  backend_address: "127.0.0.1:50051"
+  backend_schema_id: ""
+  rpc_timeout_ms: 1000
+  # When preedit matches this regex, use alphabetic select_keys (a-e)
+  # instead of numeric (1-5).  Default: Sogou v-mode.
+  v_mode_preedit_regex: "^v\\d"
+
+menu:
+  page_size: 7
+
+ascii_composer:
+  switch_key:
+    Shift_L: commit_code
+    Shift_R: commit_code
+    Control_L: noop
+    Control_R: noop
+
+engine:
+  processors:
+    - ascii_composer
+    - remote_processor
+    - key_binder
+    - selector
+  segmentors:
+    - ascii_segmentor
+    - remote_segmentor
+  translators:
+    - remote_translator
