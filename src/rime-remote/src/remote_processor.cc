@@ -111,7 +111,9 @@ ProcessResult RemoteProcessor::ProcessKeyEvent(const KeyEvent& key_event) {
     }
     ascii_was_on_ = ascii_now;
     // Don't forward this key — it was a mode-switch key.
-    return kNoop;
+    // Return kAccepted so that no other processor (e.g. selector)
+    // processes the release event after the toggle.
+    return kAccepted;
   }
 
   // Key release — skip RPC round-trip.
@@ -279,32 +281,60 @@ void RemoteProcessor::HandleAsciiModeToggle(int keycode) {
     style = it->second;
   }
 
-  if (state_->has_context()) {
-    const auto& rc = state_->context();
-    if (style == RemoteSharedState::kSwitchCommitText) {
-      // commit_text: commit the first candidate (the translated text).
-      // ascii_composer called ConfirmCurrentSelection() which doesn't auto-
-      // commit without _auto_commit option.  We handle it here instead.
-      if (!rc.candidates.empty()) {
-        // Clear whatever ascii_composer left in the composition.
-        ctx->Clear();
-        engine_->CommitText(rc.candidates[0].text);
-        LOG(INFO) << "[remote] commit_text: " << rc.candidates[0].text;
-      }
-    } else if (style == RemoteSharedState::kSwitchCommitCode) {
-      // commit_code: ascii_composer already committed the raw input (the
-      // preedit text we set via set_input).  Nothing extra to do.
-    }
-    // For kSwitchClear or kSwitchNoop: ascii_composer already handled it.
+  if (!state_->has_context()) {
+    return;
   }
 
-  // Reset the gRPC backend's composition so it doesn't carry stale state.
-  if (state_->grpc_session_open && state_->client) {
+  // --- inline_ascii ---
+  // Preserve backend composition; user may switch back to Chinese later.
+  // Do NOT call ctx->Clear() — ascii_composer hooked update_notifier and
+  // would reset ascii_mode to false if it sees !IsComposing().
+  if (style == RemoteSharedState::kSwitchInlineAscii) {
+    return;
+  }
+
+  // --- commit_code ---
+  // ascii_composer already called ClearNonConfirmedComposition() + Commit()
+  // which committed our local input_ (= the preedit text from backend).
+  // That IS the raw code, so the local commit is correct.
+  // Just tell the backend to discard its composition — don't double-commit.
+  if (style == RemoteSharedState::kSwitchCommitCode) {
     state_->client->ProcessKey(state_->session_id, 0xFF1B /* Escape */, 0);
-    // Drain any pending commit produced by the Escape.
     std::string discard;
     state_->client->GetCommit(state_->session_id, &discard);
+    state_->ClearContext();
+    return;
   }
+
+  // --- commit_text ---
+  // ascii_composer called ConfirmCurrentSelection() which does NOT auto-
+  // commit (no _auto_commit option).  Send Space to the backend to get the
+  // real candidate text, clear local composition, then emit backend's commit.
+  if (style == RemoteSharedState::kSwitchCommitText) {
+    state_->client->ProcessKey(state_->session_id, 0x20 /* space */, 0);
+    ctx->Clear();
+    std::string commit_text;
+    if (state_->client->GetCommit(state_->session_id, &commit_text) &&
+        !commit_text.empty()) {
+      engine_->CommitText(commit_text);
+      LOG(INFO) << "[remote] ascii_toggle commit_text: " << commit_text;
+    }
+    state_->ClearContext();
+    return;
+  }
+
+  // --- clear ---
+  // Discard everything.
+  if (style == RemoteSharedState::kSwitchClear) {
+    state_->client->ProcessKey(state_->session_id, 0xFF1B /* Escape */, 0);
+    std::string discard;
+    state_->client->GetCommit(state_->session_id, &discard);
+    ctx->Clear();
+    state_->ClearContext();
+    return;
+  }
+
+  // noop: do nothing (shouldn't reach here — noop keys don't trigger toggles).
   state_->ClearContext();
 }
 
