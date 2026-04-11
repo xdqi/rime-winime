@@ -14,6 +14,7 @@
 #include <rime/registry.h>
 #include <rime/schema.h>
 #include <cstring>
+#include <dlfcn.h>
 
 using namespace rime;
 
@@ -25,14 +26,106 @@ static char* StrDup(const char* s) {
     return p;
 }
 
+// ---------------------------------------------------------------------------
+// Stdbool layout compatibility
+// ---------------------------------------------------------------------------
+// Squirrel on macOS uses rime_get_api_stdbool() which returns structs where
+// Bool fields are C++ `bool` (1 byte) instead of `int` (4 bytes).
+// The plugin is compiled with the default RIME_FLAVORED (Bool = int).
+// RimeContext is layout-compatible (the single Bool in RimeMenu is padded
+// identically), but RimeStatus has 7 consecutive Bool fields whose offsets
+// diverge: non-stdbool packs them as 7×4 bytes (total struct = 56 bytes,
+// data_size=52), while stdbool packs them as 7×1 bytes (total struct = 32
+// bytes, data_size=28).  Writing 4-byte int fields into a 32-byte stdbool
+// struct overflows the buffer and corrupts the stack → SIGABRT.
+//
+// We use a template struct parameterized on the Bool type to handle both
+// layouts.  static_asserts verify that RimeStatusT<int> matches the ABI of
+// the canonical RimeStatus that we include from rime_api.h.
+
+template <typename BoolT>
+struct RimeStatusT {
+    int data_size;
+    char* schema_id;
+    char* schema_name;
+    BoolT is_disabled;
+    BoolT is_composing;
+    BoolT is_ascii_mode;
+    BoolT is_full_shape;
+    BoolT is_simplified;
+    BoolT is_traditional;
+    BoolT is_ascii_punct;
+};
+
+// Verify that RimeStatusT<int> is ABI-compatible with the canonical RimeStatus.
+static_assert(sizeof(RimeStatusT<int>) == sizeof(RIME_FLAVORED(RimeStatus)),
+              "RimeStatusT<int> size mismatch with RimeStatus");
+static_assert(offsetof(RimeStatusT<int>, data_size) ==
+              offsetof(RIME_FLAVORED(RimeStatus), data_size),
+              "data_size offset mismatch");
+static_assert(offsetof(RimeStatusT<int>, schema_id) ==
+              offsetof(RIME_FLAVORED(RimeStatus), schema_id),
+              "schema_id offset mismatch");
+static_assert(offsetof(RimeStatusT<int>, schema_name) ==
+              offsetof(RIME_FLAVORED(RimeStatus), schema_name),
+              "schema_name offset mismatch");
+static_assert(offsetof(RimeStatusT<int>, is_disabled) ==
+              offsetof(RIME_FLAVORED(RimeStatus), is_disabled),
+              "is_disabled offset mismatch");
+static_assert(offsetof(RimeStatusT<int>, is_composing) ==
+              offsetof(RIME_FLAVORED(RimeStatus), is_composing),
+              "is_composing offset mismatch");
+static_assert(offsetof(RimeStatusT<int>, is_ascii_mode) ==
+              offsetof(RIME_FLAVORED(RimeStatus), is_ascii_mode),
+              "is_ascii_mode offset mismatch");
+static_assert(offsetof(RimeStatusT<int>, is_full_shape) ==
+              offsetof(RIME_FLAVORED(RimeStatus), is_full_shape),
+              "is_full_shape offset mismatch");
+static_assert(offsetof(RimeStatusT<int>, is_ascii_punct) ==
+              offsetof(RIME_FLAVORED(RimeStatus), is_ascii_punct),
+              "is_ascii_punct offset mismatch");
+
+// data_size for each variant.
+static constexpr int kStatusDataSizeInt =
+    static_cast<int>(sizeof(RimeStatusT<int>) - sizeof(int));
+static constexpr int kStatusDataSizeBool =
+    static_cast<int>(sizeof(RimeStatusT<bool>) - sizeof(int));
+
+// Fill a RimeStatusT<BoolT> with the given values.
+template <typename BoolT>
+static void FillStatus(RimeStatusT<BoolT>* s,
+                       bool composing, bool ascii_mode,
+                       const char* schema_id_str,
+                       const char* schema_name_str) {
+    // Zero the mutable part (everything past data_size).
+    // Use the actual struct size, not data_size (which may be wrong due to
+    // Swift's KeyPath-based calculation).
+    constexpr size_t mutable_size = sizeof(RimeStatusT<BoolT>) - sizeof(int);
+    std::memset(reinterpret_cast<char*>(s) + sizeof(s->data_size), 0,
+                mutable_size);
+    s->is_composing = static_cast<BoolT>(composing);
+    s->is_ascii_mode = static_cast<BoolT>(ascii_mode);
+    s->schema_id = StrDup(schema_id_str);
+    s->schema_name = StrDup(schema_name_str);
+}
+
 // --- Original rime_api function pointers (only the ones we hook) ---
-static Bool (*original_process_key)(RimeSessionId, int, int);
-static Bool (*original_simulate_key_sequence)(RimeSessionId, const char*);
-static Bool (*original_get_context)(RimeSessionId, RIME_FLAVORED(RimeContext)*);
-static Bool (*original_get_status)(RimeSessionId, RIME_FLAVORED(RimeStatus)*);
-static Bool (*original_get_commit)(RimeSessionId, RIME_FLAVORED(RimeCommit)*);
-static Bool (*original_select_candidate)(RimeSessionId, size_t);
-static Bool (*original_select_candidate_on_current_page)(RimeSessionId, size_t);
+// We save originals from BOTH rime_get_api() and rime_get_api_stdbool()
+// because they have different implementations (the stdbool versions operate
+// on smaller structs with bool fields instead of int).
+// When falling back to originals, we must call the matching variant.
+static Bool (*original_process_key)(RimeSessionId, int, int) = nullptr;
+static Bool (*original_simulate_key_sequence)(RimeSessionId, const char*) = nullptr;
+static Bool (*original_get_context)(RimeSessionId, RIME_FLAVORED(RimeContext)*) = nullptr;
+static Bool (*original_get_status)(RimeSessionId, RIME_FLAVORED(RimeStatus)*) = nullptr;
+static Bool (*original_get_commit)(RimeSessionId, RIME_FLAVORED(RimeCommit)*) = nullptr;
+static Bool (*original_select_candidate)(RimeSessionId, size_t) = nullptr;
+static Bool (*original_select_candidate_on_current_page)(RimeSessionId, size_t) = nullptr;
+// Stdbool variants of original function pointers
+static Bool (*original_get_status_stdbool)(RimeSessionId, RIME_FLAVORED(RimeStatus)*) = nullptr;
+static Bool (*original_get_context_stdbool)(RimeSessionId, RIME_FLAVORED(RimeContext)*) = nullptr;
+static Bool (*original_get_commit_stdbool)(RimeSessionId, RIME_FLAVORED(RimeCommit)*) = nullptr;
+static bool g_hooks_initialized = false;
 
 // --------------------------------------------------------------------------
 // Schema -> gRPC backend mapping
@@ -508,34 +601,38 @@ static Bool MyGetContext(RimeSessionId session_id,
     return False;
 }
 
-static Bool MyGetStatus(RimeSessionId session_id,
-                        RIME_FLAVORED(RimeStatus)* status) {
-    if (!status || status->data_size <= 0) return False;
+// Template-based MyGetStatus implementation that works for both Bool types.
+template <typename BoolT>
+static Bool MyGetStatusImpl(RimeSessionId session_id,
+                            RimeStatusT<BoolT>* status) {
+    // Pick the original function pointer matching the caller's Bool type.
+    // For bool (stdbool), use original_get_status_stdbool if available.
+    auto orig_fn = (sizeof(BoolT) == 1 && original_get_status_stdbool)
+                       ? original_get_status_stdbool
+                       : original_get_status;
 
     auto& ss = EnsureSession(session_id);
+
     if (!ss.is_grpc) {
-        return original_get_status
-            ? original_get_status(session_id, status) : False;
+        return orig_fn
+            ? orig_fn(session_id,
+                  reinterpret_cast<RIME_FLAVORED(RimeStatus)*>(status))
+            : False;
     }
 
     // After keyup skip, derive from saved snapshot.
     if (ss.last_was_keyup_skip) {
-        RIME_STRUCT_CLEAR(*status);
-        status->is_composing = ss.last_is_composing;
-        // Let local rime report ascii_mode via its own option.
+        bool composing = ss.last_is_composing;
+        bool ascii_mode = false;
         RimeApi* api = const_cast<RimeApi*>(rime_get_api());
         if (api && api->get_option) {
-            status->is_ascii_mode = api->get_option(session_id, "ascii_mode");
+            ascii_mode = api->get_option(session_id, "ascii_mode");
         }
-        // In ascii mode the UI shows no Chinese composition (MyGetContext
-        // returns empty context).  Report is_composing=false to keep
-        // status and context consistent — otherwise _Respond will try
-        // to dereference a null preedit and crash.
-        if (status->is_ascii_mode) {
-            status->is_composing = False;
+        if (ascii_mode) {
+            composing = false;
         }
-        status->schema_id = StrDup(ss.schema_id.c_str());
-        status->schema_name = StrDup("gRPC Proxy");
+        FillStatus(status, composing, ascii_mode,
+                   ss.schema_id.c_str(), "gRPC Proxy");
         return True;
     }
 
@@ -543,28 +640,49 @@ static Bool MyGetStatus(RimeSessionId session_id,
 
     auto client = GrpcImeClientV2::Find(ss.backend_address);
     if (!client || !client->HasSession(session_id)) {
-        return original_get_status
-            ? original_get_status(session_id, status) : False;
+        return orig_fn
+            ? orig_fn(session_id,
+                  reinterpret_cast<RIME_FLAVORED(RimeStatus)*>(status))
+            : False;
     }
 
     service::v2::RimeContextProto proto;
     if (client->GetContext(session_id, &proto)) {
-        RIME_STRUCT_CLEAR(*status);
-        status->is_composing = proto.has_composition();
+        bool composing = proto.has_composition();
+        bool ascii_mode = false;
         RimeApi* api = const_cast<RimeApi*>(rime_get_api());
         if (api && api->get_option) {
-            status->is_ascii_mode = api->get_option(session_id, "ascii_mode");
+            ascii_mode = api->get_option(session_id, "ascii_mode");
         }
-        // In ascii mode, suppress composing — see comment above.
-        if (status->is_ascii_mode) {
-            status->is_composing = False;
+        if (ascii_mode) {
+            composing = false;
         }
-        status->schema_id = StrDup(ss.schema_id.c_str());
-        status->schema_name = StrDup("gRPC Proxy");
-        ss.last_is_composing = status->is_composing;
+        FillStatus(status, composing, ascii_mode,
+                   ss.schema_id.c_str(), "gRPC Proxy");
+        ss.last_is_composing = composing ? True : False;
         return True;
     }
     return False;
+}
+
+static Bool MyGetStatus(RimeSessionId session_id,
+                        RIME_FLAVORED(RimeStatus)* status) {
+    if (!status || status->data_size <= 0) return False;
+
+    // Dispatch to the correct template specialization based on data_size.
+    // The non-stdbool (Bool=int) variant has data_size == kStatusDataSizeInt (52).
+    // The stdbool (Bool=bool) variant has a SMALLER data_size.
+    // Note: Swift's rimeStructInit() computes data_size as
+    //   MemoryLayout<T>.size - MemoryLayout.size(ofValue: \T.data_size)
+    // where the latter is the KeyPath size (8), not sizeof(Int32) (4).
+    // So Swift produces data_size=24, while C would produce 28.
+    // We treat ANY data_size != kStatusDataSizeInt as the stdbool variant.
+    if (status->data_size != kStatusDataSizeInt) {
+        return MyGetStatusImpl(session_id,
+            reinterpret_cast<RimeStatusT<bool>*>(status));
+    }
+    return MyGetStatusImpl(session_id,
+        reinterpret_cast<RimeStatusT<int>*>(status));
 }
 
 static Bool MyGetCommit(RimeSessionId session_id,
@@ -657,7 +775,9 @@ static void rime_grpc_proxy_v2_initialize() {
   RimeApi* api = const_cast<RimeApi*>(rime_get_api());
   if (api) {
       RimeSchemaList schema_list = {};
+      int grpc_schema_count = 0;
       if (api->get_schema_list(&schema_list)) {
+          LOG(INFO) << "[grpc_proxy] schema list loaded, total=" << schema_list.size;
           for (size_t i = 0; i < schema_list.size; ++i) {
               const char* sid = schema_list.list[i].schema_id;
               if (!sid) continue;
@@ -711,6 +831,7 @@ static void rime_grpc_proxy_v2_initialize() {
                       }
 
                       g_grpc_schemas[sid] = info;
+                      ++grpc_schema_count;
                       // NOTE: gRPC client is NOT created here — it will be
                       // lazily created in EnsureSession() when this schema
                       // is first activated, avoiding startup blocking.
@@ -719,39 +840,92 @@ static void rime_grpc_proxy_v2_initialize() {
                                 << " timeout=" << info.timeout_ms << "ms";
                   }
                   api->config_close(&cfg);
+              } else {
+                  LOG(WARNING) << "[grpc_proxy] schema_open failed for '" << sid << "'";
               }
           }
           api->free_schema_list(&schema_list);
+          LOG(INFO) << "[grpc_proxy] grpc schema scan complete, grpc_schema_count="
+                    << grpc_schema_count;
+          if (grpc_schema_count == 0) {
+              LOG(WARNING) << "[grpc_proxy] no grpc_proxy schemas discovered; "
+                              "plugin will stay on local path unless config is updated.";
+          }
+      } else {
+          LOG(WARNING) << "[grpc_proxy] get_schema_list failed; cannot discover grpc schemas.";
       }
 
-      // Hook only the API functions we need.
-      // Session management (create/destroy/find) is NOT hooked — rime
-      // manages local sessions so that switcher, ascii_composer, etc. work.
+      // Hook the API functions we need on ALL flavored API structs.
+      // Squirrel on macOS calls rime_get_api_stdbool() which returns a
+      // SEPARATE static struct from rime_get_api().  Both must be hooked.
+      // The structs have identical layout (bool vs int is ABI-compatible
+      // for 0/1 on all supported platforms).
       //
-      // IMPORTANT: only save the originals on the FIRST call.
-      // rime_api->initialize() may be called multiple times (e.g. after
-      // Deploy), re-triggering module init.  If we save api->get_status
-      // when it's already MyGetStatus, the "original" becomes ourselves
-      // and we get infinite recursion → stack overflow.
-      if (!original_process_key) {
-          original_process_key = api->process_key;
-          original_simulate_key_sequence = api->simulate_key_sequence;
-          original_get_context = api->get_context;
-          original_get_status = api->get_status;
-          original_get_commit = api->get_commit;
-          original_select_candidate = api->select_candidate;
-          original_select_candidate_on_current_page = api->select_candidate_on_current_page;
-      }
+      // We save originals only once from the first API struct — all
+      // flavors point to the same underlying functions initially.
 
-      api->process_key = MyProcessKey;
-      api->simulate_key_sequence = MySimulateKeySequence;
-      api->get_context = MyGetContext;
-      api->get_status = MyGetStatus;
-      api->get_commit = MyGetCommit;
-      api->select_candidate = MySelectCandidate;
-      api->select_candidate_on_current_page = MySelectCandidateOnCurrentPage;
-      LOG(INFO) << "[grpc_proxy] RimeApi hooks installed (process_key, "
-                   "get_context, get_status, get_commit, select_candidate).";
+      // Collect all API structs we need to hook.
+      RimeApi* api_list[2] = { api, nullptr };
+      const char* api_names[2] = { "rime_get_api", "rime_get_api_stdbool" };
+      int api_count = 1;
+#if defined(__APPLE__)
+      {
+          using ApiGetter = void* (*)();
+          auto getter = reinterpret_cast<ApiGetter>(
+              dlsym(RTLD_DEFAULT, "rime_get_api_stdbool"));
+          if (getter) {
+              api_list[1] = reinterpret_cast<RimeApi*>(getter());
+              if (api_list[1]) {
+                  api_count = 2;
+              } else {
+                  LOG(WARNING) << "[grpc_proxy] rime_get_api_stdbool() returned NULL.";
+              }
+          } else {
+              LOG(INFO) << "[grpc_proxy] rime_get_api_stdbool symbol not found; "
+                           "non-macOS or unavailable.";
+          }
+      }
+#endif
+
+      for (int i = 0; i < api_count; ++i) {
+          RimeApi* target = api_list[i];
+          if (!target) continue;
+
+          // Save originals from each un-hooked API struct.
+          // After Deploy, initialize() is called again — the pointers in
+          // the struct are already ours, so skip saving to avoid
+          // infinite recursion.
+          if (!g_hooks_initialized &&
+              target->process_key != MyProcessKey) {
+              if (i == 0) {
+                  // Non-stdbool originals (from rime_get_api)
+                  original_process_key = target->process_key;
+                  original_simulate_key_sequence = target->simulate_key_sequence;
+                  original_get_context = target->get_context;
+                  original_get_status = target->get_status;
+                  original_get_commit = target->get_commit;
+                  original_select_candidate = target->select_candidate;
+                  original_select_candidate_on_current_page = target->select_candidate_on_current_page;
+              } else {
+                  // Stdbool originals (from rime_get_api_stdbool)
+                  // These operate on smaller structs (Bool=bool, 1 byte).
+                  original_get_status_stdbool = target->get_status;
+                  original_get_context_stdbool = target->get_context;
+                  original_get_commit_stdbool = target->get_commit;
+              }
+          }
+
+          target->process_key = MyProcessKey;
+          target->simulate_key_sequence = MySimulateKeySequence;
+          target->get_context = MyGetContext;
+          target->get_status = MyGetStatus;
+          target->get_commit = MyGetCommit;
+          target->select_candidate = MySelectCandidate;
+          target->select_candidate_on_current_page = MySelectCandidateOnCurrentPage;
+
+          LOG(INFO) << "[grpc_proxy] hooks installed on " << api_names[i] << "()";
+      }
+      g_hooks_initialized = true;
   } else {
       LOG(ERROR) << "[grpc_proxy] rime_get_api() returned NULL!";
   }
