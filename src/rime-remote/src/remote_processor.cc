@@ -165,6 +165,15 @@ ProcessResult RemoteProcessor::ProcessKeyEvent(const KeyEvent& key_event) {
   // If context has composition, inject input to trigger Compose pipeline.
   if (state_->has_context()) {
     const auto& rc = state_->context();
+
+    // Dynamically update schema select_keys based on v_mode detection.
+    // RimeGetContext reads select_keys from schema->select_keys(), so we
+    // must push the computed value there for the frontend to display the
+    // correct key hints (e.g. "abcde" for v-mode vs "12345" for normal).
+    if (!rc.select_keys.empty()) {
+      engine_->schema()->set_select_keys(rc.select_keys);
+    }
+
     // Use the actual preedit text from the backend as input.
     // This ensures:
     //  - commit_code (ascii_composer) commits the real preedit, not garbage
