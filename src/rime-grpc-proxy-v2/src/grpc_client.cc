@@ -92,11 +92,12 @@ GrpcImeClientV2::~GrpcImeClientV2() {
   stub_.reset();
 }
 
-bool GrpcImeClientV2::OpenSession(uintptr_t session_id) {
+bool GrpcImeClientV2::OpenSession(uintptr_t session_id,
+                                  const std::string& schema_id) {
   ClientContext context;
   SetupClientContext(&context);
   OpenSessionRequest req;
-  req.set_schema_id("luna_pinyin");
+  req.set_schema_id(schema_id);
   OpenSessionResponse resp;
   
   Status status = stub_->OpenSession(&context, req, &resp);

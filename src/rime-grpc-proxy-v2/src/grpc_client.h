@@ -44,7 +44,8 @@ public:
   // --- Session management (keyed by local rime session_id) ---
   bool HasSession(uintptr_t session_id);
   // Open a gRPC session paired with the given local rime session_id.
-  bool OpenSession(uintptr_t session_id);
+  bool OpenSession(uintptr_t session_id,
+                   const std::string& schema_id = "luna_pinyin");
   void DestroySession(uintptr_t session_id);
   bool ProcessKey(uintptr_t session_id, int keycode, int mask);
   bool GetContext(uintptr_t session_id, service::v2::RimeContextProto* out_context);
