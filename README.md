@@ -1,15 +1,15 @@
-# Sogou IME gRPC Bridge
+# rime-winime
 
-Use Chinese IMEs (Sogou Pinyin, QQPinyin) as backends for [Rime](https://rime.im/) input method framework — across Linux, macOS (Squirrel), and Windows (Weasel).
+Use commercial Chinese IMEs (Sogou Pinyin, QQPinyin) as backends for the [Rime](https://rime.im/) input method framework — across Linux, macOS (Squirrel), and Windows (Weasel).
 
 ## How It Works
 
 ```
 ┌─────────────────────┐    gRPC     ┌─────────────────────┐
-│  Rime frontend      │◄──────────►│  ime-grpc-host-v2   │
+│  Rime frontend      │◄──────────► │  ime-grpc-host-v2   │
 │  + rime-remote      │  (proto3)   │  (Rust, under Wine) │
 │  plugin (v3)        │             │                     │
-│                     │             │  Loads SogouPY.ime  │
+│                     │             │  Loads Win32 .ime   │
 │  fcitx5 / ibus /    │             │  via Win32 IMM API  │
 │  Squirrel / Weasel  │             └─────────────────────┘
 └─────────────────────┘
@@ -43,7 +43,7 @@ A Rime plugin (`rime-remote`) forwards keystrokes over gRPC to a Rust server (`i
 ## Project Structure
 
 ```
-sogou/
+rime-winime/
 ├── src/
 │   ├── rime-remote/          # v3 librime plugin (production)
 │   ├── rime-grpc-proxy-v2/   # v2 librime plugin (superseded)
@@ -114,7 +114,7 @@ See [docs/SETUP_AND_USAGE.md](docs/SETUP_AND_USAGE.md) for full setup instructio
 | [SETUP_AND_USAGE.md](docs/SETUP_AND_USAGE.md) | Operators | Build, configure, deploy, troubleshoot |
 | [DEVELOPMENT_HISTORY.md](docs/DEVELOPMENT_HISTORY.md) | Anyone | 10-day timeline, decisions, evolution |
 | [GRPC_PROTOCOL.md](docs/GRPC_PROTOCOL.md) | Developers | Protobuf message reference, RPC semantics |
-| [REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) | Researchers | Sogou DLL internals, byte_3554, IDA analysis |
+| [REVERSE_ENGINEERING.md](docs/REVERSE_ENGINEERING.md) | Researchers | Win32 IME DLL internals, byte_3554, IDA analysis |
 | [WIN32_IMM_INTERNALS.md](docs/WIN32_IMM_INTERNALS.md) | Developers | IMM DDI lifecycle, COMPOSITIONSTRING, Wine quirks |
 
 ## Version History
