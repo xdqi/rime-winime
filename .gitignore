@@ -11,9 +11,11 @@ syswow64
 weasel
 winabc
 wine
-/*.*
 src/**/target/
 src/**/build/
 *.exe
 *.dll
 *.so
+*.ime
+*.o
+*.a
