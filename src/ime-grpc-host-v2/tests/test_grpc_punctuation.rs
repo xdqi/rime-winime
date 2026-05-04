@@ -111,7 +111,7 @@ async fn run_key_sequence(
     let mut accumulated = String::new();
 
     for &(keycode, modifier, label) in keys {
-        let accepted = process_key(client, session_id, keycode, modifier, label).await;
+        let _accepted = process_key(client, session_id, keycode, modifier, label).await;
 
         // Small delay to mimic real typing
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
