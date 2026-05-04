@@ -83,7 +83,7 @@ async fn get_commit(
     }
 }
 
-async fn get_context_preedit(
+async fn print_context(
     client: &mut RimeServiceClient<tonic::transport::Channel>,
     session_id: &str,
 ) -> String {
@@ -95,6 +95,15 @@ async fn get_context_preedit(
         .expect("GetContext RPC failed");
     let ctx = resp.into_inner().context;
     if let Some(ctx) = ctx {
+        if let Some(menu) = &ctx.menu {
+            if menu.num_candidates > 0 {
+                print!("    Candidates: ");
+                for (i, cand) in menu.candidates.iter().enumerate() {
+                    print!("{}.{} ", i + 1, cand.text);
+                }
+                println!("(total: {})", menu.num_candidates);
+            }
+        }
         if let Some(comp) = ctx.composition {
             return comp.preedit;
         }
@@ -111,12 +120,12 @@ async fn run_key_sequence(
     let mut accumulated = String::new();
 
     for &(keycode, modifier, label) in keys {
-        let accepted = process_key(client, session_id, keycode, modifier, label).await;
+        let _accepted = process_key(client, session_id, keycode, modifier, label).await;
 
         // Small delay to mimic real typing
         tokio::time::sleep(std::time::Duration::from_millis(30)).await;
 
-        let preedit = get_context_preedit(client, session_id).await;
+        let preedit = print_context(client, session_id).await;
         if !preedit.is_empty() {
             println!("    Preedit: {}", preedit);
         }
@@ -176,9 +185,9 @@ async fn test_grpc_nihao_comma() {
 
     println!("\n--- Test: kkk then shift (expect 'kkk') ---");
     let keys = [
-        (0x6B, 0u32, 'k'),
-        (0x6B, 0, 'k'),
-        (0x6B, 0, 'k'),
+        (0x73, 0u32, 's'),
+        (0x73, 0, 's'),
+        (0x68, 0, 'h'),
         (0xFFE1, 1, '⇧'),
     ];
     let commit = run_key_sequence(&mut client, &session_id, &keys).await;

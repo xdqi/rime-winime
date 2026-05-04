@@ -99,7 +99,7 @@ async fn run_test_sequence(
 #[cfg(windows)]
 #[tokio::test]
 async fn test_basic_nihao_commit() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (VK_N, 0, 'n'),
         (VK_I, 0, 'i'),
@@ -114,7 +114,7 @@ async fn test_basic_nihao_commit() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_multi_round_nihaoshijie_1() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (VK_N, 0, 'n'),
         (VK_I, 0, 'i'),
@@ -136,7 +136,7 @@ async fn test_multi_round_nihaoshijie_1() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_multi_round_nihaoshijie_2_partial() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (VK_N, 0, 'n'),
         (VK_I, 0, 'i'),
@@ -158,7 +158,7 @@ async fn test_multi_round_nihaoshijie_2_partial() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_uppercase_upan() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (VK_U, 1, 'U'),
         (VK_P, 0, 'p'),
@@ -172,7 +172,7 @@ async fn test_uppercase_upan() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_punctuations_and_numbers() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (VK_1, 0, '1'),
         (VK_2, 0, '2'),
@@ -185,7 +185,7 @@ async fn test_punctuations_and_numbers() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_complex_time_format() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (VK_2, 0, '2'),
         (VK_3, 0, '3'),
@@ -199,7 +199,7 @@ async fn test_complex_time_format() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_meizi_commit() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [
         (VK_M, 0, 'm'),
         (VK_I, 0, 'i'),
@@ -213,7 +213,7 @@ async fn test_meizi_commit() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_mp3() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
     let keys = [(VK_M, 0, 'm'), (VK_P, 0, 'p'), (VK_3, 0, '3')];
     run_test_sequence(&mut adapter, "MP3", &keys).await;
 }
@@ -221,16 +221,16 @@ async fn test_mp3() {
 #[cfg(windows)]
 #[tokio::test]
 async fn test_shift() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
-    let keys = [(VK_S, 0, 's'), (VK_SHIFT, (VK_RSHIFT.0 as u32) << 16, 'S')];// s then left shift
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
+    let keys = [(VK_S, 0, 's'), (VK_SHIFT, (VK_RSHIFT.0 as u32) << 16, 'S')]; // s then left shift
     run_test_sequence(&mut adapter, "s", &keys).await;
 }
 
 #[cfg(windows)]
 #[tokio::test]
 async fn test_return() {
-    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false, true);
-    let keys = [(VK_S, 0, 's'), (VK_RETURN, 0, '\n')];// s then return
+    let mut adapter = win_imm::ImmRimeAdapter::new(&get_ime_path(), false);
+    let keys = [(VK_S, 0, 's'), (VK_RETURN, 0, '\n')]; // s then return
     run_test_sequence(&mut adapter, "s", &keys).await;
 }
 // Removed not(windows) main as we are an integration test.
