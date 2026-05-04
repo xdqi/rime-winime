@@ -20,6 +20,10 @@ struct Args {
     #[arg(long, env = "GRPC_BIND_ADDR", default_value = "127.0.0.1:50051")]
     bind: String,
 
+    /// Backend: `imm` (IMM32) or `tsf` (TSF TIP)
+    #[arg(long, env = "GRPC_IME_TYPE", value_enum, default_value_t = ImeType::Imm)]
+    ime_type: ImeType,
+
     /// Path to the IME DLL (e.g. C:\Windows\system32\SogouPY.ime or C:\Windows\system32\QQPinyin.ime)
     #[arg(
         long,
