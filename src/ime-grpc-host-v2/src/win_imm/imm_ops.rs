@@ -1,11 +1,19 @@
 use windows::core::{s, PCWSTR};
-use windows::Win32::Foundation::{BOOL, HMODULE};
+use windows::Win32::Foundation::{BOOL, HMODULE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::UI::Input::Ime::{
-    ImmGetCandidateListW, ImmGetCompositionStringW, ATTR_TARGET_CONVERTED,
-    ATTR_TARGET_NOTCONVERTED, CANDIDATELIST, GCS_COMPATTR, GCS_COMPSTR, GCS_CURSORPOS,
-    GCS_RESULTSTR, HIMC, TRANSMSGLIST,
+    ImmGenerateMessage, ImmGetCandidateListW, ImmGetCompositionStringW, ImmSetConversionStatus,
+    ATTR_TARGET_CONVERTED, ATTR_TARGET_NOTCONVERTED, CANDIDATELIST, GCS_COMPATTR, GCS_COMPSTR,
+    GCS_CURSORPOS, GCS_RESULTSTR, HIMC, IME_CMODE_NATIVE, TRANSMSGLIST,
 };
+use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
+use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
+
+#[link(name = "imm32")]
+extern "system" {
+    fn ImmProcessKey(hwnd: HWND, hkl: HKL, vk: u32, lparam: LPARAM, hotkey: u32) -> u32;
+    fn ImmTranslateMessage(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> BOOL;
+}
 
 pub type PImeInquire = unsafe extern "system" fn(
     lp_imeinfo: *mut windows::Win32::UI::Input::Ime::IMEINFO,
@@ -27,6 +35,40 @@ pub type PImeToAsciiEx = unsafe extern "system" fn(
     fu_state: u32,
     h_imc: HIMC,
 ) -> u32;
+pub type PImeNotifyIME =
+    unsafe extern "system" fn(h_imc: HIMC, action: u32, index: u32, value: u32) -> BOOL;
+pub type PImeSetActiveContext = unsafe extern "system" fn(h_imc: HIMC, f_activate: BOOL) -> BOOL;
+
+pub fn imm_generate_message(himc: HIMC) -> bool {
+    unsafe { ImmGenerateMessage(himc).as_bool() }
+}
+
+pub fn imm_set_native_conversion_status(himc: HIMC) -> bool {
+    unsafe { ImmSetConversionStatus(himc, IME_CMODE_NATIVE, Default::default()).as_bool() }
+}
+
+pub fn imm_process_key(hwnd: HWND, hkl: HKL, vk: u32, lparam: u32) -> u32 {
+    unsafe { ImmProcessKey(hwnd, hkl, vk, LPARAM(lparam as isize), u32::MAX) }
+}
+
+pub fn imm_translate_message(
+    hwnd: HWND,
+    message: u32,
+    wparam: usize,
+    lparam: u32,
+) -> bool {
+    unsafe { ImmTranslateMessage(hwnd, message, WPARAM(wparam), LPARAM(lparam as isize)).as_bool() }
+}
+
+pub fn get_window_text(hwnd: HWND) -> String {
+    let mut buf = vec![0u16; 1024];
+    let len = unsafe { GetWindowTextW(hwnd, &mut buf) };
+    if len <= 0 {
+        String::new()
+    } else {
+        String::from_utf16_lossy(&buf[..len as usize])
+    }
+}
 
 #[derive(Clone, Copy)]
 pub struct ImeFunctions {
@@ -35,6 +77,8 @@ pub struct ImeFunctions {
     pub select: PImeSelect,
     pub process_key: PImeProcessKey,
     pub to_ascii_ex: PImeToAsciiEx,
+    pub notify_ime: Option<PImeNotifyIME>,
+    pub set_active_context: Option<PImeSetActiveContext>,
 }
 
 unsafe impl Send for ImeFunctions {}
@@ -50,6 +94,8 @@ pub fn load_ime_dll(path: PCWSTR) -> Result<ImeFunctions, windows::core::Error> 
             GetProcAddress(h_module, s!("ImeProcessKey")).expect("ImeProcessKey not found");
         let to_ascii_ex_ptr =
             GetProcAddress(h_module, s!("ImeToAsciiEx")).expect("ImeToAsciiEx not found");
+        let notify_ime_ptr = GetProcAddress(h_module, s!("NotifyIME"));
+        let set_active_context_ptr = GetProcAddress(h_module, s!("ImeSetActiveContext"));
 
         Ok(ImeFunctions {
             h_module,
@@ -88,6 +134,26 @@ pub fn load_ime_dll(path: PCWSTR) -> Result<ImeFunctions, windows::core::Error> 
                     windows::Win32::UI::Input::Ime::HIMC,
                 ) -> u32,
             >(to_ascii_ex_ptr),
+            notify_ime: notify_ime_ptr.map(|ptr| {
+                std::mem::transmute::<
+                    unsafe extern "system" fn() -> isize,
+                    unsafe extern "system" fn(
+                        windows::Win32::UI::Input::Ime::HIMC,
+                        u32,
+                        u32,
+                        u32,
+                    ) -> windows::Win32::Foundation::BOOL,
+                >(ptr)
+            }),
+            set_active_context: set_active_context_ptr.map(|ptr| {
+                std::mem::transmute::<
+                    unsafe extern "system" fn() -> isize,
+                    unsafe extern "system" fn(
+                        windows::Win32::UI::Input::Ime::HIMC,
+                        windows::Win32::Foundation::BOOL,
+                    ) -> windows::Win32::Foundation::BOOL,
+                >(ptr)
+            }),
         })
     }
 }
