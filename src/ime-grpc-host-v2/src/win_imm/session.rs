@@ -8,8 +8,8 @@ use windows::Win32::UI::Input::Ime::{
 use windows::Win32::UI::Input::KeyboardAndMouse::SetFocus;
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, RegisterClassW, SetForegroundWindow,
-    SetWindowPos, ShowWindow, HMENU, HWND_TOPMOST, SWP_SHOWWINDOW, SW_SHOW, WINDOW_EX_STYLE,
-    WINDOW_STYLE, WNDCLASSW, WS_CHILD, WS_VISIBLE,
+    SetWindowPos, ShowWindow, HMENU, HWND_MESSAGE, HWND_TOPMOST, SWP_SHOWWINDOW, SW_SHOW,
+    WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSW, WS_CHILD, WS_VISIBLE,
 };
 
 unsafe extern "system" fn default_wndproc(
@@ -54,11 +54,19 @@ impl WinImmSession {
         ensure_window_class();
 
         unsafe {
-            let _ = show_window;
             let style = if show_window {
                 WS_VISIBLE
             } else {
                 WINDOW_STYLE(0)
+            };
+
+            // When show_window is false, use HWND_MESSAGE so no X display is
+            // required. Message-only windows cannot host child windows, so only
+            // create the child EDIT when running with a real window.
+            let parent = if show_window {
+                HWND(0 as _)
+            } else {
+                HWND_MESSAGE
             };
 
             let hwnd = match CreateWindowExW(
@@ -70,7 +78,7 @@ impl WinImmSession {
                 0,
                 800,
                 600,
-                HWND(0 as _),
+                parent,
                 None,
                 None,
                 None,
@@ -85,36 +93,39 @@ impl WinImmSession {
                 }
             };
 
-            let target_hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE(0),
-                w!("EDIT"),
-                w!(""),
-                WS_CHILD | WS_VISIBLE,
-                0,
-                0,
-                8,
-                8,
-                hwnd,
-                HMENU(0 as _),
-                None,
-                None,
-            )
-            .unwrap_or(hwnd);
+            let target_hwnd = if show_window {
+                CreateWindowExW(
+                    WINDOW_EX_STYLE(0),
+                    w!("EDIT"),
+                    w!(""),
+                    WS_CHILD | WS_VISIBLE,
+                    0,
+                    0,
+                    8,
+                    8,
+                    hwnd,
+                    HMENU(0 as _),
+                    None,
+                    None,
+                )
+                .unwrap_or(hwnd)
+            } else {
+                hwnd
+            };
 
             let himc = ImmCreateContext();
 
-            // ImmAssociateContext returns the previous HIMC and sets the
-            // INPUTCONTEXT.hWnd — needed for ImmGenerateMessage to know
-            // which window to SendMessage to.
             let _ = ImmAssociateContext(target_hwnd, himc);
             let _ = ImmAssociateContext(hwnd, himc);
             let _ = ImmAssociateContextEx(target_hwnd, himc, 0);
             let _ = ImmAssociateContextEx(hwnd, himc, 0);
 
-            let _ = ShowWindow(hwnd, SW_SHOW);
-            let _ = SetWindowPos(hwnd, HWND_TOPMOST, -32000, -32000, 8, 8, SWP_SHOWWINDOW);
-            let _ = SetForegroundWindow(hwnd);
-            let _ = SetFocus(target_hwnd);
+            if show_window {
+                let _ = ShowWindow(hwnd, SW_SHOW);
+                let _ = SetWindowPos(hwnd, HWND_TOPMOST, -32000, -32000, 8, 8, SWP_SHOWWINDOW);
+                let _ = SetForegroundWindow(hwnd);
+                let _ = SetFocus(target_hwnd);
+            }
 
             tracing::info!(
                 "WinImmSession::create: session={} hwnd=0x{:X} target=0x{:X} himc=0x{:X} show_window={}",

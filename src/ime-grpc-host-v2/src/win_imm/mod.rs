@@ -186,7 +186,7 @@ impl ImmRimeAdapter {
                 .set_active_context
                 .map(|set_active| set_active(session.himc, BOOL(1)).as_bool())
                 .unwrap_or(false);
-            let open = unsafe { ImmSetOpenStatus(session.himc, true).as_bool() };
+            let open = ImmSetOpenStatus(session.himc, true).as_bool();
             let native_mode =
                 crate::win_imm::imm_ops::imm_set_native_conversion_status(session.himc);
             tracing::info!(
@@ -208,7 +208,7 @@ impl ImmRimeAdapter {
             );
 
             let def_ime_wnd =
-                unsafe { ImmGetDefaultIMEWnd(session.target_hwnd) };
+                ImmGetDefaultIMEWnd(session.target_hwnd);
             tracing::info!(
                 "activate_ime_context: default_ime_wnd=0x{:X}",
                 def_ime_wnd.0 as usize
