@@ -13,7 +13,8 @@ use std::sync::OnceLock;
 use windows::Win32::Foundation::{BOOL, LPARAM, WPARAM};
 use windows::Win32::UI::Input::Ime::{
     CPS_COMPLETE, GCS_RESULTSTR, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, ISC_SHOWUIALL,
-    ImmNotifyIME, NI_COMPOSITIONSTR, NI_SELECTCANDIDATESTR, NOTIFY_IME_INDEX,
+    ImmGetDefaultIMEWnd, ImmNotifyIME, ImmSetOpenStatus, NI_COMPOSITIONSTR,
+    NI_SELECTCANDIDATESTR, NOTIFY_IME_INDEX,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyboardLayout, SetKeyboardState, ToUnicode, VIRTUAL_KEY, VK_CONTROL, VK_LCONTROL,
@@ -185,7 +186,7 @@ impl ImmRimeAdapter {
                 .set_active_context
                 .map(|set_active| set_active(session.himc, BOOL(1)).as_bool())
                 .unwrap_or(false);
-            let open = crate::win_imm::imm_ops::imm_set_open_status(session.himc, true);
+            let open = unsafe { ImmSetOpenStatus(session.himc, true).as_bool() };
             let native_mode =
                 crate::win_imm::imm_ops::imm_set_native_conversion_status(session.himc);
             tracing::info!(
@@ -207,7 +208,7 @@ impl ImmRimeAdapter {
             );
 
             let def_ime_wnd =
-                crate::win_imm::imm_ops::imm_get_default_ime_wnd(session.target_hwnd);
+                unsafe { ImmGetDefaultIMEWnd(session.target_hwnd) };
             tracing::info!(
                 "activate_ime_context: default_ime_wnd=0x{:X}",
                 def_ime_wnd.0 as usize

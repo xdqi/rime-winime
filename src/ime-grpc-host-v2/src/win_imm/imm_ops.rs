@@ -2,10 +2,9 @@ use windows::core::{s, PCWSTR};
 use windows::Win32::Foundation::{BOOL, HMODULE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::UI::Input::Ime::{
-    ImmGenerateMessage, ImmGetCandidateListW, ImmGetCompositionStringW, ImmGetDefaultIMEWnd,
-    ImmSetConversionStatus, ImmSetOpenStatus, ATTR_TARGET_CONVERTED, ATTR_TARGET_NOTCONVERTED,
-    CANDIDATELIST, GCS_COMPATTR, GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, HIMC,
-    IME_CMODE_NATIVE, TRANSMSGLIST,
+    ImmGenerateMessage, ImmGetCandidateListW, ImmGetCompositionStringW, ImmSetConversionStatus,
+    ATTR_TARGET_CONVERTED, ATTR_TARGET_NOTCONVERTED, CANDIDATELIST, GCS_COMPATTR, GCS_COMPSTR,
+    GCS_CURSORPOS, GCS_RESULTSTR, HIMC, IME_CMODE_NATIVE, TRANSMSGLIST,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
@@ -42,14 +41,6 @@ pub type PImeSetActiveContext = unsafe extern "system" fn(h_imc: HIMC, f_activat
 
 pub fn imm_generate_message(himc: HIMC) -> bool {
     unsafe { ImmGenerateMessage(himc).as_bool() }
-}
-
-pub fn imm_get_default_ime_wnd(hwnd: HWND) -> HWND {
-    unsafe { ImmGetDefaultIMEWnd(hwnd) }
-}
-
-pub fn imm_set_open_status(himc: HIMC, open: bool) -> bool {
-    unsafe { ImmSetOpenStatus(himc, open).as_bool() }
 }
 
 pub fn imm_set_native_conversion_status(himc: HIMC) -> bool {
