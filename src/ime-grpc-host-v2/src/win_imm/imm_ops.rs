@@ -2,17 +2,16 @@ use windows::core::{s, PCWSTR};
 use windows::Win32::Foundation::{BOOL, HMODULE, HWND, LPARAM, WPARAM};
 use windows::Win32::System::LibraryLoader::{GetProcAddress, LoadLibraryW};
 use windows::Win32::UI::Input::Ime::{
-    ImmGetCandidateListW, ImmGetCompositionStringW, ImmGetDefaultIMEWnd, ImmSetConversionStatus,
-    ImmSetOpenStatus, ATTR_TARGET_CONVERTED, ATTR_TARGET_NOTCONVERTED, CANDIDATELIST,
-    GCS_COMPATTR, GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, HIMC, IME_CMODE_NATIVE,
-    TRANSMSGLIST,
+    ImmGenerateMessage, ImmGetCandidateListW, ImmGetCompositionStringW, ImmGetDefaultIMEWnd,
+    ImmSetConversionStatus, ImmSetOpenStatus, ATTR_TARGET_CONVERTED, ATTR_TARGET_NOTCONVERTED,
+    CANDIDATELIST, GCS_COMPATTR, GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, HIMC,
+    IME_CMODE_NATIVE, TRANSMSGLIST,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::HKL;
 use windows::Win32::UI::WindowsAndMessaging::GetWindowTextW;
 
 #[link(name = "imm32")]
 extern "system" {
-    fn ImmGenerateMessage(himc: HIMC) -> BOOL;
     fn ImmProcessKey(hwnd: HWND, hkl: HKL, vk: u32, lparam: LPARAM, hotkey: u32) -> u32;
     fn ImmTranslateMessage(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> BOOL;
 }

@@ -10,7 +10,7 @@ use crate::proto::rime_service_v2::{KeyEvent, RimeContextProto};
 use crate::win_imm::imm_ops::ImeFunctions;
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use windows::Win32::Foundation::{BOOL, HMODULE, LPARAM, WPARAM};
+use windows::Win32::Foundation::{BOOL, LPARAM, WPARAM};
 use windows::Win32::UI::Input::Ime::{
     CPS_COMPLETE, GCS_RESULTSTR, IMN_SETCONVERSIONMODE, IMN_SETOPENSTATUS, ISC_SHOWUIALL,
     ImmNotifyIME, NI_COMPOSITIONSTR, NI_SELECTCANDIDATESTR, NOTIFY_IME_INDEX,
@@ -24,10 +24,6 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PM_REMOVE, WM_CHAR, WM_IME_CHAR, WM_IME_COMPOSITION, WM_KEYDOWN, WM_KEYUP, WM_SYSKEYDOWN,
     WM_SYSKEYUP,
 };
-
-extern "system" {
-    pub fn FreeLibrary(hLibModule: HMODULE) -> BOOL;
-}
 
 const IPHK_PROCESSBYIME: u32 = 0x00000002;
 const MAX_PUMP_MESSAGES: usize = 256;
