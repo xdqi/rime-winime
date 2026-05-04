@@ -5,7 +5,13 @@ pub mod proto {
     }
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, feature = "imm-backend"))]
 pub mod win_imm;
+
+#[cfg(windows)]
+pub mod win_tsf;
+
+#[cfg(windows)]
+pub mod win_keymap;
 
 pub mod server;
